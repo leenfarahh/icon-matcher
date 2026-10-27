@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Icon Placer Test</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --ink: #1b1f24; --muted: #5f6b7a; --line: #e3e7ec;
+    --accent: #2f5bd3; --accent-soft: #e9effc; --warn: #a3470f; --warn-soft: #fdf1e8; --ok-soft: #eaf6ee;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #status { color: var(--muted); font-size: 13px; }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav button { border: 0; background: none; padding: 7px 14px; border-radius: 6px; font: inherit; color: var(--muted); cursor: pointer; }
+  nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  input, select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
+  input[type=file] { padding: 5px; }
+  button.primary { font: inherit; font-weight: 600; background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 18px; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: wait; }
+  .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
+  .err { background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; }
+  .summary { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+  .summary b { font-size: 15px; }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; border: 1px solid var(--line); }
+  a.dl { margin-left: auto; text-decoration: none; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  h2 { font-size: 14px; margin: 0 0 10px; }
+  .ic { filter: brightness(0); opacity: .85; }
+  .pick { display: flex; gap: 10px; align-items: center; }
+  .alts { display: flex; gap: 10px; flex-wrap: wrap; }
+  .alt { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .chip { display: inline-block; padding: 1px 7px; border-radius: 10px; background: #f0f2f5; font-size: 12px; margin: 0 4px 4px 0; }
+  .chip.house { background: var(--accent-soft); color: var(--accent); }
+  .chip.avoid { background: var(--warn-soft); color: var(--warn); }
+  .badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #f0f2f5; color: var(--muted); white-space: nowrap; display: inline-block; margin-bottom: 4px; }
+  .badge.weak { background: var(--warn-soft); color: var(--warn); }
+  .badge.rtl { background: var(--ok-soft); color: #1d6b3a; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card .top { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+  .card .id { font-weight: 600; }
+  .ar { direction: rtl; text-align: right; font-size: 13px; color: var(--muted); }
+  .lbl { font-size: 11px; color: var(--muted); font-weight: 600; margin: 6px 0 2px; }
+  .banner { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button.secondary { font: inherit; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 16px; cursor: pointer; }
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin: 12px 0 16px; }
+  .form-grid .wide { grid-column: 1 / -1; }
+  .form-grid label { align-content: start; }
+  textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; min-height: 54px; resize: vertical; }
+  label small { font-weight: 400; color: var(--muted); }
+  label small.warn { color: var(--warn); }
+  .opts { display: flex; gap: 16px; align-items: center; font-size: 14px; color: var(--ink); font-weight: 400; padding-top: 4px; }
+  .opts input { margin-right: 4px; }
+  .preview { display: flex; gap: 18px; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 8px; min-height: 104px; color: var(--muted); font-size: 12px; }
+  .preview figure { margin: 0; display: grid; justify-items: center; gap: 4px; }
+  .preview figcaption { font-size: 11px; color: var(--muted); }
+  .hint { background: var(--warn-soft); color: var(--ink); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+  #file-msg:empty { display: none; }
+  #file-msg { display: grid; gap: 8px; }
+  .ok { background: var(--ok-soft); color: #1d6b3a; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  .ok ul, .err ul { margin: 6px 0 0; padding-left: 18px; }
+  button.small { padding: 3px 10px; font-size: 12px; margin-left: auto; align-self: start; }
+  .apply-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .apply-bar .note { flex: 1; min-width: 240px; }
+  #apply-msg:not(:empty) { margin-bottom: 12px; }
+  .apply-ok { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .apply-ok span { flex: 1; }
+  .apply-ok ul { flex-basis: 100%; }
+  th.tick, td.tick { width: 28px; padding-right: 0; }
+  td.color-cell { max-width: 220px; }
+  td.color-cell .note { font-size: 11px; }
+  td.tick input, th.tick input { width: 16px; height: 16px; cursor: pointer; }
+  .card.retired { opacity: .7; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Icon Placer · test console</h1>
+  <span id="status">Loading library…</span>
+  <nav>
+    <button data-tab="run" class="on">Run on a deck</button>
+    <button data-tab="library">Library</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-run">
+    <form id="run" class="panel">
+      <div class="row">
+        <label>Deck (.pptx)<input type="file" name="deck" accept=".pptx" required></label>
+        <label>Mode
+          <select name="mode">
+            <option value="suggest">Suggest only (report, deck untouched)</option>
+            <option value="add">Add icons (writes a copy)</option>
+          </select>
+        </label>
+        <label>Slides (optional)<input name="slides" placeholder="e.g. 2,3,5" size="12"></label>
+        <button class="primary" type="submit">Run</button>
+      </div>
+      <p class="note" id="llm-note"></p>
+    </form>
+    <div id="out"></div>
+  </section>
+
+  <section id="tab-library" hidden>
+    <div class="panel row">
+      <label style="flex:1">Search tags, concepts, descriptions (English or Arabic)
+        <input id="q" placeholder="e.g. growth, security, نمو" autocomplete="off">
+      </label>
+      <label>Category<select id="cat"><option value="">All</option></select></label>
+      <label>Status
+        <select id="st">
+          <option value="approved">Approved</option>
+          <option value="">All statuses</option>
+          <option value="sample">Sample</option>
+          <option value="deprecated">Deprecated</option>
+        </select>
+      </label>
+      <span id="count" class="note"></span>
+      <button class="primary" id="add-open" type="button">Add icon</button>
+    </div>
+
+    <form id="add" class="panel" hidden>
+      <h2 id="form-title">Add an icon to the library</h2>
+      <p class="note" style="margin:0" id="edit-intro" hidden>The ID and file can't change: decks and other icons refer to them. To retire the icon, set Status to deprecated.</p>
+      <p class="note" style="margin:0" id="add-intro">Saved as <span class="mono">&lt;id&gt;.svg</span> in the library folder and added to icons.json. PNG, JPG and other images are traced into a one-color SVG; the original is kept in <span class="mono">originals/</span>. Fields marked * are required. Separate list items with ; or ,</p>
+      <div class="form-grid">
+        <div class="preview" id="add-preview">No file chosen</div>
+        <label id="file-field">Icon file *<input type="file" name="file" accept=".svg,.png,.jpg,.jpeg,.webp,.gif,.bmp" required>
+          <small>SVG, or a PNG, JPG, WebP, GIF or BMP to convert. For images, 512 px or larger on a transparent or plain background traces best.</small></label>
+        <div class="wide" id="file-msg"></div>
+        <label>ID *<input name="id" required placeholder="e.g. growth-arrow" autocomplete="off">
+          <small id="id-check">Lowercase words joined by hyphens</small></label>
+        <label>Category *<input name="category" list="cats" required placeholder="e.g. data" autocomplete="off"></label>
+        <label>Style<select name="style"><option>outline</option><option>filled</option></select></label>
+        <label>Status<select name="status"><option>approved</option><option>sample</option><option>deprecated</option></select></label>
+        <label class="wide">Description *<input name="description" required placeholder="What the icon shows, e.g. Bar chart with an arrow pointing up"></label>
+        <label class="wide">Arabic description<input name="description_ar" dir="rtl"></label>
+        <label class="wide">Tags *<textarea name="tags" required placeholder="Ideas a slide would express, not what is drawn: growth; revenue; increase"></textarea></label>
+        <label class="wide">Arabic tags<textarea name="tags_ar" dir="rtl" placeholder="نمو، إيرادات، زيادة"></textarea></label>
+        <label class="wide">House pick for<input name="preferred_for" placeholder="Concepts where this icon is the first choice (each concept can have only one)" autocomplete="off">
+          <small id="pref-check"></small></label>
+        <label>Avoid for<input name="avoid_for" placeholder="e.g. decline; cost reduction"></label>
+        <label>Contexts<input name="contexts" placeholder="e.g. finance; performance"></label>
+        <label>Pairs with<input name="pairs_with" placeholder="Icon ids, e.g. analytics; target" autocomplete="off">
+          <small id="pairs-check"></small></label>
+        <label>Metaphor
+          <span class="opts"><span><input type="radio" name="metaphor_strength" value="strong" checked>Strong</span>
+          <span><input type="radio" name="metaphor_strength" value="weak">Weak (needs its label)</span></span></label>
+        <label>Arabic decks
+          <span class="opts"><span><input type="checkbox" name="rtl_flip" value="true">Mirror (arrows, steps, progress)</span></span></label>
+        <label>Source<input name="source" placeholder="Where the icon came from"></label>
+        <label>License<input name="license" placeholder="Required before client use"></label>
+      </div>
+      <div class="row" style="align-items:center">
+        <button class="primary" type="submit" id="form-submit">Add to library</button>
+        <button class="secondary" type="button" id="add-cancel">Cancel</button>
+      </div>
+      <div id="add-msg" style="margin-top:12px"></div>
+    </form>
+    <datalist id="cats"></datalist>
+
+    <div id="added"></div>
+    <div id="concept"></div>
+    <div id="grid" class="grid"></div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const img = (id, px) => `<img class="ic" src="icons/${encodeURIComponent(id)}.svg" width="${px}" height="${px}" alt="${esc(id)}">`;
+const chips = (list, cls = "") => (list || []).map(t => `<span class="chip ${cls}">${esc(t)}</span>`).join("");
+let lib = {icons: [], concept_map: {}};
+
+// tabs (#library deep-links to the library tab)
+function show(tab) {
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#tab-run").hidden = tab !== "run";
+  $("#tab-library").hidden = tab !== "library";
+  history.replaceState(null, "", tab === "library" ? "#library" : location.pathname);
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
+
+// library
+async function loadLibrary() {
+  try {
+    const r = await fetch("library");
+    lib = await r.json();
+  } catch (e) {
+    $("#status").textContent = "Library not reachable: is the server running?";
+    return;
+  }
+  const warn = lib.warnings.length ? ` · ${lib.warnings.length} warnings` : "";
+  const src = lib.indexed_from_filenames ? " · no icons.json, matched on file names" : "";
+  const approved = lib.icons.filter(i => i.status === "approved").length;
+  const others = lib.icons.length - approved ? ` · ${lib.icons.length - approved} sample or deprecated` : "";
+  $("#status").textContent = `${approved} icons · ${Object.keys(lib.concept_map).length} concepts${others}${warn}${src}`;
+  $("#llm-note").textContent = lib.llm
+    ? "Concepts are extracted with the Claude API."
+    : "No ANTHROPIC_API_KEY set: concepts come from keyword matching, so expect rougher picks.";
+  const cats = [...new Set(lib.icons.map(i => i.category))].sort();
+  const current = $("#cat").value;
+  $("#cat").innerHTML = '<option value="">All</option>' + cats.map(c => `<option>${esc(c)}</option>`).join("");
+  $("#cat").value = cats.includes(current) ? current : "";
+  $("#cats").innerHTML = cats.map(c => `<option value="${esc(c)}">`).join("");
+  renderLibrary();
+}
+
+function renderLibrary() {
+  const q = $("#q").value.trim().toLowerCase();
+  const cat = $("#cat").value;
+  const st = $("#st").value;
+  const hit = i => !q || [i.id, i.description, i.description_ar, ...i.tags, ...i.tags_ar, ...i.preferred_for, ...i.contexts]
+    .some(v => String(v).toLowerCase().includes(q));
+  const inStatus = lib.icons.filter(i => !st || i.status === st);
+  const list = inStatus.filter(i => (!cat || i.category === cat) && hit(i));
+  $("#count").textContent = `${list.length} of ${inStatus.length}`;
+
+  const cm = lib.concept_map[q];
+  $("#concept").innerHTML = cm ? `<div class="banner"><span>House pick for <b>${esc(q)}</b>:</span>
+      <span class="pick">${img(cm.id, 28)} <b>${esc(cm.id)}</b></span>
+      ${cm.alts.length ? `<span class="note" style="margin:0">alternates: ${cm.alts.map(esc).join(", ")}</span>` : ""}</div>` : "";
+
+  $("#grid").innerHTML = list.map(i => `
+    <div class="card${i.status === "approved" ? "" : " retired"}">
+      <div class="top">${img(i.id, 44)}
+        <div><div class="id">${esc(i.id)}</div><div class="note" style="margin:0">${esc(i.description)}</div></div>
+        <button class="secondary small" type="button" data-edit="${esc(i.id)}">Edit</button>
+      </div>
+      <div class="ar">${esc(i.description_ar)}</div>
+      <div style="margin:8px 0">
+        <span class="badge">${esc(i.category)}</span>
+        <span class="badge">${esc(i.style)}</span>
+        ${i.metaphor_strength === "weak" ? '<span class="badge weak">weak metaphor</span>' : ""}
+        ${i.rtl_flip ? '<span class="badge rtl">mirrors in Arabic</span>' : ""}
+        ${i.status !== "approved" ? `<span class="badge weak">${esc(i.status)}</span>` : ""}
+      </div>
+      ${i.preferred_for.length ? `<div class="lbl">House pick for</div>${chips(i.preferred_for, "house")}` : ""}
+      <div class="lbl">Tags</div>${chips(i.tags.filter(t => !i.preferred_for.includes(t)))}
+      <div class="lbl">Arabic tags</div><div class="ar">${chips(i.tags_ar)}</div>
+      ${i.avoid_for.length ? `<div class="lbl">Avoid for</div>${chips(i.avoid_for, "avoid")}` : ""}
+      ${i.pairs_with.length ? `<div class="lbl">Pairs with</div><div class="note" style="margin:0">${i.pairs_with.map(esc).join(", ")}</div>` : ""}
+    </div>`).join("");
+}
+$("#q").oninput = renderLibrary;
+$("#cat").onchange = renderLibrary;
+$("#st").onchange = renderLibrary;
+
+// add or edit an icon (one form; `editing` holds the id being edited, null when adding)
+const addForm = $("#add");
+const field = n => addForm.elements[n];
+const splitList = s => s.split(/[;,،\n]+/).map(v => v.trim().toLowerCase()).filter(Boolean);
+const LIST_FIELDS = ["tags", "tags_ar", "preferred_for", "avoid_for", "contexts", "pairs_with"];
+let editing = null;
+
+function openForm(icon) {
+  editing = icon ? icon.id : null;
+  addForm.reset();
+  ["#file-msg", "#add-msg", "#added"].forEach(s => $(s).innerHTML = "");
+  $("#form-title").textContent = icon ? `Edit ${icon.id}` : "Add an icon to the library";
+  $("#form-submit").textContent = icon ? "Save changes" : "Add to library";
+  $("#add-intro").hidden = !!icon;
+  $("#edit-intro").hidden = !icon;
+  $("#file-field").hidden = !!icon;
+  field("file").required = !icon;
+  field("id").readOnly = !!icon;
+  if (icon) {
+    for (const k of ["id", "category", "description", "description_ar", "source", "license"]) field(k).value = icon[k] || "";
+    for (const k of ["style", "status"]) {  // keep an unusual stored value selectable rather than silently changing it
+      if (![...field(k).options].some(o => o.value === icon[k])) field(k).add(new Option(icon[k], icon[k]));
+      field(k).value = icon[k];
+    }
+    for (const k of LIST_FIELDS) field(k).value = (icon[k] || []).join(k === "tags_ar" ? "، " : "; ");
+    field("metaphor_strength").value = icon.metaphor_strength || "strong";
+    field("rtl_flip").checked = !!icon.rtl_flip;
+    $("#add-preview").innerHTML = `<figure>${img(icon.id, 64)}<figcaption>${esc(icon.file)}</figcaption></figure>`;
+  } else {
+    $("#add-preview").textContent = "No file chosen";
+  }
+  addForm.hidden = false;
+  checkAdd();
+  addForm.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+$("#add-open").onclick = () => {
+  if (!addForm.hidden && !editing) { addForm.hidden = true; return; }
+  openForm(null);
+};
+$("#add-cancel").onclick = () => { addForm.hidden = true; editing = null; };
+$("#grid").onclick = e => {
+  const btn = e.target.closest("[data-edit]");
+  if (btn) openForm(lib.icons.find(i => i.id === btn.dataset.edit));
+};
+
+field("file").onchange = async () => {
+  const file = field("file").files[0];
+  const box = $("#add-preview"), msg = $("#file-msg");
+  msg.innerHTML = "";
+  if (!file) { box.textContent = "No file chosen"; return; }
+  if (!field("id").value) {
+    field("id").value = file.name.replace(/\.[a-z0-9]+$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  }
+  checkAdd();
+  box.textContent = "Checking…";
+  // the server shows exactly what would be saved: the SVG as-is, or the vector traced from an image
+  let p;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch("library/preview", {method: "POST", body});
+    p = await res.json();
+    if (!res.ok) throw new Error((p && p.detail) || `Server error ${res.status}`);
+  } catch (err) {
+    box.textContent = "Preview failed";
+    msg.innerHTML = `<div class="err">${esc(err.message)}</div>`;
+    return;
+  }
+  if (field("file").files[0] !== file) return;  // another file was chosen meanwhile
+  const svgUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(p.svg);  // shown in <img>: nothing in it can run
+  const original = p.source_format ? `<figure><img width="64" height="64" style="object-fit:contain" alt=""
+      src="${URL.createObjectURL(file)}"><figcaption>Original ${esc(p.source_format)}</figcaption></figure>` : "";
+  const vector = p.svg && !p.errors.length ? `<figure><img class="ic" width="64" height="64" alt="" src="${svgUrl}">
+      <figcaption>${p.source_format ? "Vector to save" : "SVG"}</figcaption></figure>` : "";
+  box.innerHTML = (original + vector) || "Can't preview this file";
+  const notes = p.source_format && !p.errors.length
+    ? [`Traced from ${p.source_format}: compare the two and check the shapes before saving.`, ...p.warnings] : p.warnings;
+  msg.innerHTML = (p.errors.length ? `<div class="err"><b>This file can't be added:</b><ul>${
+      p.errors.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "")
+    + (notes.length ? `<div class="hint"><ul style="margin:0;padding-left:18px">${
+      notes.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "");
+};
+
+function checkAdd() {  // early hints; the server runs the full checks on save
+  const id = field("id").value.trim().toLowerCase();
+  const idNote = $("#id-check");
+  const taken = !editing && lib.icons.some(i => i.id === id);
+  idNote.textContent = editing ? "Fixed: decks and other icons refer to it"
+    : taken ? `“${id}” is already used` : "Lowercase words joined by hyphens";
+  idNote.className = taken ? "warn" : "";
+  const claims = splitList(field("preferred_for").value).filter(c => lib.concept_map[c] && lib.concept_map[c].id !== editing)
+    .map(c => `“${c}” is already the house pick for ${lib.concept_map[c].id}`);
+  $("#pref-check").textContent = claims.join(" · ");
+  $("#pref-check").className = "warn";
+  const ids = new Set(lib.icons.map(i => i.id));
+  const unknown = splitList(field("pairs_with").value).filter(p => !ids.has(p));
+  $("#pairs-check").textContent = unknown.length ? `Unknown ids: ${unknown.join(", ")}` : "";
+  $("#pairs-check").className = "warn";
+}
+["id", "preferred_for", "pairs_with"].forEach(n => field(n).oninput = checkAdd);
+
+addForm.onsubmit = async e => {
+  e.preventDefault();
+  const btn = $("#form-submit");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = editing ? "Saving…" : "Adding…";
+  $("#add-msg").innerHTML = "";
+  const data = new FormData(addForm);
+  data.set("rtl_flip", field("rtl_flip").checked ? "true" : "false");  // an unticked box is otherwise not sent
+  if (editing) data.delete("file");
+  try {
+    const res = await fetch(editing ? `library/icons/${encodeURIComponent(editing)}` : "library/icons",
+                            {method: editing ? "PATCH" : "POST", body: data});
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const detail = body && body.detail;
+      const errs = Array.isArray(detail) ? detail : [detail || `Server error ${res.status}`];
+      $("#add-msg").innerHTML = `<div class="err"><b>Not saved. Fix the following and try again:</b><ul>${
+        errs.map(x => `<li>${esc(typeof x === "string" ? x : x.msg || JSON.stringify(x))}</li>`).join("")}</ul></div>`;
+      return;
+    }
+    const icon = body.icon;
+    const notes = [...body.warnings];
+    if (icon.status !== "approved") notes.unshift(`Status is ${icon.status}: it is never used in decks, and shows only under Status: All statuses or ${icon.status}.`);
+    const done = editing ? `Saved changes to ${esc(icon.id)}` : `Added ${esc(icon.id)} to icons.json`;
+    addForm.hidden = true;
+    editing = null;
+    await loadLibrary();
+    $("#added").innerHTML = `<div class="ok"><b>${done}.</b>${
+      notes.length ? `<ul>${notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}</div>`;
+    $("#q").value = icon.id;
+    if ($("#st").value && $("#st").value !== icon.status) $("#st").value = "";
+    renderLibrary();
+  } catch (err) {
+    $("#add-msg").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = label;
+  }
+};
+
+// deep links: #library opens the library, #add-icon opens the add form
+const startHash = location.hash;  // read once: show() rewrites the hash
+if (startHash === "#library" || startHash === "#add-icon") show("library");
+if (startHash === "#add-icon") openForm(null);
+
+// run
+$("#run").onsubmit = async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button");
+  btn.disabled = true; btn.textContent = "Running…";
+  $("#out").innerHTML = "";
+  try {
+    const res = await fetch("jobs", {method: "POST", body: new FormData(e.target)});
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((body && body.detail) || `Server error ${res.status}`);
+    renderResult(body);
+  } catch (err) {
+    $("#out").innerHTML = `<div class="panel"><div class="err">${esc(err.message)}</div></div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "Run";
+  }
+};
+
+function renderResult(r) {
+  const s = r.settings;
+  const tiers = Object.entries(s.tiers).map(([k, v]) => `${k} ${v}"`).join(" · ");
+  const summary = `<div class="panel summary">
+      <b>${r.mode === "suggest" ? "Suggested" : "Added"} ${r.picks.length} icons · ${r.flags.length} flagged</b>
+      <span>Style: ${esc(s.style)}</span>
+      <span>Deck color: <span class="swatch" style="background:#${esc(s.color_hex)}"></span> ${esc(s.color_slot || "")} #${esc(s.color_hex)}</span>
+      <span class="note" style="margin:0">Tiers: ${esc(tiers)}</span>
+      ${r.output_file ? `<a class="dl" href="jobs/${encodeURIComponent(r.job)}/download"><button class="primary" type="button">Download deck</button></a>` : ""}
+    </div>`;
+
+  const choose = r.mode === "suggest";  // suggestions can be added one by one or all at once
+  const bar = choose ? `<div class="apply-bar" id="apply-bar">
+      <span class="note" style="margin:0">Tick the icons to add, or add them all. You get a copy of the deck with exactly those icons; the original is never changed.</span>
+      <button class="primary" type="button" id="add-selected" disabled>Add selected (0)</button>
+      <button class="secondary" type="button" id="add-all">Add all ${r.picks.length}</button>
+    </div><div id="apply-msg"></div>` : "";
+  const picks = r.picks.length ? `<div class="panel"><h2>Picks</h2>${bar}<table>
+      <tr>${choose ? '<th class="tick"><input type="checkbox" id="pick-all" title="Select all"></th>' : ""}
+        <th>Slide</th><th>Item</th><th>Concept</th><th>Icon</th><th>Color</th><th>Why</th><th>Alternatives</th></tr>
+      ${r.picks.map((p, n) => ({p, n})).sort((a, b) => a.p.item.slide - b.p.item.slide).map(({p, n}) => `<tr>
+        ${choose ? `<td class="tick"><input type="checkbox" class="pick-box" value="${n}" aria-label="Add this icon"></td>` : ""}
+        <td>${p.item.slide}</td>
+        <td>${esc(p.item.text)}<div class="note" style="margin:0">${esc(p.item.kind)}${p.flip ? " · mirrored" : ""}${
+          p.position ? ` · ${esc(p.position)} the text` : ""}${
+          p.indent ? ` · <b>layout change:</b> text moved ${esc(p.indent.toFixed(2))}in ${p.item.rtl ? "left" : "right"} to make room` : ""}</div></td>
+        <td class="mono">${esc(p.item.concept)}</td>
+        <td><div class="pick">${img(p.icon.id, 40)}<b>${esc(p.icon.id)}</b></div></td>
+        <td class="color-cell"><span class="swatch" style="background:#${esc(p.color_hex)}"></span>
+          <b>${esc(p.color_slot)}</b><div class="note" style="margin:0">${esc(p.color_note)}</div></td>
+        <td>${esc(p.reason)}</td>
+        <td><div class="alts">${p.alternatives.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div></td>
+      </tr>`).join("")}</table></div>` : "";
+
+  const flags = r.flags.length ? `<div class="panel"><h2>Flagged (no icon added)</h2><table>
+      <tr><th>Slide</th><th>Item</th><th>Concept</th><th>Reason</th><th>Options</th></tr>
+      ${r.flags.map(f => `<tr>
+        <td>${f.item.slide}</td><td>${esc(f.item.text)}</td><td class="mono">${esc(f.item.concept) || "-"}</td>
+        <td>${esc(f.reason)}</td>
+        <td><div class="alts">${f.options.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div></td>
+      </tr>`).join("")}</table></div>` : "";
+
+  const notes = `<div class="panel"><h2>Settings and gaps</h2>
+      ${Object.entries(s.sources).map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("")}
+      ${r.gaps.map(g => `<div>${esc(g)}</div>`).join("")}</div>`;
+
+  $("#out").innerHTML = summary + picks + flags + notes;
+  if (choose && r.picks.length) wireApply(r);
+}
+
+function wireApply(r) {
+  const boxes = [...document.querySelectorAll(".pick-box")];
+  const all = $("#pick-all"), addSel = $("#add-selected");
+  const sync = () => {
+    const n = boxes.filter(b => b.checked).length;
+    addSel.textContent = `Add selected (${n})`;
+    addSel.disabled = !n;
+    all.checked = n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+  };
+  boxes.forEach(b => b.onchange = sync);
+  all.onchange = () => { boxes.forEach(b => b.checked = all.checked); sync(); };
+  addSel.onclick = () => apply(r, boxes.filter(b => b.checked).map(b => Number(b.value)), sync);
+  $("#add-all").onclick = () => apply(r, r.picks.map((_, n) => n), sync);
+}
+
+async function apply(r, indices, sync) {
+  const buttons = [...document.querySelectorAll("#apply-bar button")];
+  buttons.forEach(b => b.disabled = true);
+  $("#apply-msg").innerHTML = `<div class="note">Adding ${indices.length} icon${indices.length === 1 ? "" : "s"} to a copy of the deck…</div>`;
+  try {
+    const res = await fetch(`jobs/${encodeURIComponent(r.job)}/apply`,
+      {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({picks: indices})});
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const d = body && body.detail;
+      throw new Error(typeof d === "string" ? d : Array.isArray(d) ? d.map(x => x.msg || x).join("; ") : `Server error ${res.status}`);
+    }
+    const skipped = body.skipped.length
+      ? `<ul><li>Skipped ${body.skipped.length}: no longer approved in the library (${esc(body.skipped.join(", "))}).</li></ul>` : "";
+    $("#apply-msg").innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
+        to ${esc(body.output_file)}. The copy holds exactly these icons.</span>
+        <a href="${esc(body.download)}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>`;
+  } catch (err) {
+    $("#apply-msg").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+  } finally {
+    buttons.forEach(b => b.disabled = false);
+    sync();
+  }
+}
+
+loadLibrary();
+</script>
+</body>
+</html>

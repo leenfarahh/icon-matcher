@@ -1,0 +1,10 @@
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+python-pptx>=1.0
+lxml>=5.0
+resvg-py>=0.5
+vtracer>=0.6
+Pillow>=10.0
+anthropic>=0.40
+python-dotenv>=1.0
