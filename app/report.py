@@ -6,8 +6,9 @@ from .models import Report
 
 def to_markdown(r: Report) -> str:
     s = r.settings
+    verb = {"suggest": "Suggested", "replace": "Replaced placeholders with"}.get(r.mode, "Added")
     lines = [
-        f"{'Suggested' if r.mode == 'suggest' else 'Added'} {len(r.picks)} icons in the {s.style} style, "
+        f"{verb} {len(r.picks)} icons in the {s.style} style, "
         f"deck color {s.color_slot} #{s.color_hex}, tiers {s.tiers}. {len(r.flags)} items flagged.", "",
         "| Slide | Item | Icon | Color | Why | Alternatives |", "| --- | --- | --- | --- | --- | --- |"]
     for p in sorted(r.picks, key=lambda p: p.item.slide):
@@ -16,7 +17,8 @@ def to_markdown(r: Report) -> str:
     if r.flags:
         lines += ["", "**Flagged (no icon added):**"]
         lines += [f"- Slide {f.item.slide}, '{f.item.text[:50]}': {f.reason}"
-                  + (f" (options: {', '.join(f.options)})" if f.options else "") for f in r.flags]
+                  + (f" ({'closest icons, for a designer to choose' if f.spot else 'options'}: "
+                     f"{', '.join(f.options)})" if f.options else "") for f in r.flags]
     lines += ["", "**Settings and gaps:**"] + [f"- {k}: {v}" for k, v in s.sources.items()] + [f"- {g}" for g in r.gaps]
     return "\n".join(lines)
 

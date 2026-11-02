@@ -7,7 +7,7 @@ from statistics import median
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from . import colors, config
+from . import colors, config, placeholders
 from .icon_tools import EMU, THEME_CLASS
 from .models import DeckSettings, Item
 
@@ -365,34 +365,6 @@ def holders(slide, theme, slide_h) -> list[list[dict]]:
         side = min([min(ir - il, ib - it) for il, it, ir, ib in inner] + [min(r - l, b - t)])
         return round(cx, 3), round(cy, 3), round(HOLDER_ICON_SHARE * side, 3)
 
-    def center(s):
-        sl, st, sr, sb = _inches(s)
-        return (sl + sr) / 2, (st + sb) / 2
-
-    def label(f):
-        l, t, r, b = f["box"]
-        cx, cy = (l + r) / 2, (t + b) / 2
-        panels = [(s, _inches(s)) for s in others if colors.is_drawn(s, colors.shape_fill(theme, s))]
-        panels = [(pl, pt, pr, pb) for s, (pl, pt, pr, pb) in panels if pl <= cx <= pr and pt <= cy <= pb
-                  and 2 * (r - l) * (b - t) <= (pr - pl) * (pb - pt) <= HOLDER_PANEL_SHARE * slide_area]
-        if panels:
-            pl, pt, pr, pb = min(panels, key=lambda e: (e[2] - e[0]) * (e[3] - e[1]))
-            on = [s for s in texts if pl <= center(s)[0] <= pr and pt <= center(s)[1] <= pb]
-            if on:   # the panel's heading: its topmost text
-                return min(on, key=lambda s: (_inches(s)[1], len(s.text_frame.text.split())))
-        near = []
-        for s in texts:
-            sl, st, sr, sb = _inches(s)
-            if min(r, sr) - max(l, sl) > 0:          # in its column: above or below it
-                gap = max(st - b, t - sb)
-            elif min(b, sb) - max(t, st) > 0:        # in its row: beside it
-                gap = max(sl - r, l - sr)
-            else:
-                continue
-            if -0.05 <= gap <= HOLDER_REACH_IN:
-                near.append((gap, s))
-        return min(near, key=lambda e: e[0])[1] if near else None
-
     groups = []
     for f in (f for f in found if empty(f)):
         g = next((g for g in groups if g[0]["kind"] == f["kind"] and _ratio(g[0]["box"][2] - g[0]["box"][0],
@@ -404,11 +376,88 @@ def holders(slide, theme, slide_h) -> list[list[dict]]:
     out = []
     for g in (g for g in groups if len(g) >= 2):
         for f in g:
-            f["label"], f["seat"] = label(f), seat(f)
+            f["label"], f["seat"] = _label_for(f["box"], others, texts, theme, slide_area), seat(f)
         labels = [f["label"].shape_id for f in g if f["label"] is not None]
         if len(labels) == len(g) == len(set(labels)):
             out.append(sorted(g, key=lambda f: (round(_inches(f["label"])[1], 1), _inches(f["label"])[0])))
     return out
+
+
+UNITS = {"bn", "b", "mn", "m", "k", "x", "pp", "pt", "pts", "yr", "yrs", "q", "h", "hrs", "usd", "aed", "sar",
+         "qar", "jod", "eur", "gbp"}
+
+
+def _value_only(text: str) -> bool:
+    """A KPI value, not a label: numbers, percentages, ranges and units only ("15-30%", "AED 2.4bn", "2020")."""
+    return not [w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in UNITS]
+
+
+def _label_candidates(box, others, texts, theme, slide_area) -> list[tuple]:
+    """The texts an icon spot (a holder or placeholder) may stand for, best first, as (gap in inches, shape):
+    the heading of the panel it sits in (its topmost text), then the texts in line with it (above, below or
+    beside), nearest first. KPI values are never labels: in a tile, the icon stands for the description."""
+    l, t, r, b = box
+    cx, cy = (l + r) / 2, (t + b) / 2
+    texts = [s for s in texts if not _value_only(s.text_frame.text)]
+
+    def center(s):
+        sl, st, sr, sb = _inches(s)
+        return (sl + sr) / 2, (st + sb) / 2
+
+    out = []
+    panels = [(s, _inches(s)) for s in others if colors.is_drawn(s, colors.shape_fill(theme, s))]
+    panels = [(pl, pt, pr, pb) for s, (pl, pt, pr, pb) in panels if pl <= cx <= pr and pt <= cy <= pb
+              and 2 * (r - l) * (b - t) <= (pr - pl) * (pb - pt) <= HOLDER_PANEL_SHARE * slide_area]
+    if panels:
+        pl, pt, pr, pb = min(panels, key=lambda e: (e[2] - e[0]) * (e[3] - e[1]))
+        on = [s for s in texts if pl <= center(s)[0] <= pr and pt <= center(s)[1] <= pb]
+        if on:
+            out.append((-1.0, min(on, key=lambda s: (_inches(s)[1], len(s.text_frame.text.split())))))
+    for s in texts:
+        sl, st, sr, sb = _inches(s)
+        if min(r, sr) - max(l, sl) > 0:          # in its column: above or below it
+            gap = max(st - b, t - sb)
+        elif min(b, sb) - max(t, st) > 0:        # in its row: beside it
+            gap = max(sl - r, l - sr)
+        else:
+            continue
+        if -0.05 <= gap <= HOLDER_REACH_IN and all(s is not o for _, o in out):
+            out.append((gap, s))
+    return sorted(out, key=lambda e: e[0])
+
+
+def _label_for(box, others, texts, theme, slide_area):
+    """The text an icon spot stands for (its best label candidate), or None."""
+    found = _label_candidates(box, others, texts, theme, slide_area)
+    return found[0][1] if found else None
+
+
+def pl_placeholders(slide, theme, slide_h, refs) -> tuple[list[dict], str]:
+    """The PL logo placeholders on a slide, each paired with its own label: {"shape", "box" (left, top, right,
+    bottom inches), "ids", "label", "slot" (its theme color, or None)}. Pairs go closest first (a panel's
+    heading before any text in line), and a text labels one placeholder only. All of a slide's placeholders get
+    icons together, so when one is left without a label, none is returned and the second value says why."""
+    found = [{"shape": sh, "box": _inches(sh), "ids": _ids(sh)} for sh in placeholders.find(slide, refs)]
+    if not found:
+        return [], ""
+    ids = set().union(*(f["ids"] for f in found))
+    others = [s for s in colors.leaves(slide.shapes) if s.shape_id not in ids]
+    texts = [s for s in others if s.has_text_frame and s.text_frame.text.strip() and not _not_an_item(s, slide_h)]
+    slide_area = slide.part.package.presentation_part.presentation.slide_width / EMU * slide_h
+    pairs = sorted(((gap, k, s) for k, f in enumerate(found)
+                    for gap, s in _label_candidates(f["box"], others, texts, theme, slide_area)), key=lambda e: e[:2])
+    taken = set()
+    for gap, k, s in pairs:
+        if "label" not in found[k] and s.shape_id not in taken:
+            found[k]["label"] = s
+            taken.add(s.shape_id)
+    if any("label" not in f for f in found):
+        near = any(_label_candidates(f["box"], others, texts, theme, slide_area) for f in found if "label" not in f)
+        return [], ("has no text of its own nearby (the texts near it label other placeholders)" if near
+                    else "has no text beside it or on its panel")
+    for f in found:
+        f["slot"] = colors.icon_slot(theme, f["shape"])
+    return sorted(found, key=lambda f: (round(_inches(f["label"])[1], 1), _inches(f["label"])[0])), ""
 
 
 def _family(slide, kind, st, member_boxes, slide_w, slide_h, extra="") -> str:
@@ -422,10 +471,12 @@ def _family(slide, kind, st, member_boxes, slide_w, slide_h, extra="") -> str:
                      f"{st['font']:.0f}", str(st["bold"]), f"{col}{row}", extra])
 
 
-def read_items(prs: Presentation, slides: list[int] | None = None) -> list[Item]:
+def read_items(prs: Presentation, slides: list[int] | None = None, refs=(), notes: list | None = None) -> list[Item]:
     """Icon candidates, in sets that get icons together or not at all. Text inside groups counts too.
-    rank: -1 the labels of empty icon holders; 0 nodes, tiles and cards with short labels, and heroes; 1 short
-    plain labels; 2 longer text; 3 bullet lists. The best-ranked set is the slide's main component."""
+    rank: -2 the labels of PL logo placeholders (`refs`: the library's reference looks); -1 the labels of empty
+    icon holders; 0 nodes, tiles and cards with short labels, and heroes; 1 short plain labels; 2 longer text;
+    3 bullet lists. The best-ranked set is the slide's main component. Placeholders that can't be paired with a
+    label are reported in `notes`."""
     items: list[Item] = []
     slide_w, slide_h = prs.slide_width / EMU, prs.slide_height / EMU
     themes = {}
@@ -436,8 +487,27 @@ def read_items(prs: Presentation, slides: list[int] | None = None) -> list[Item]
         theme = themes.setdefault(id(master), colors.Theme(master))
         title = _slide_title(slide)
         nodes = _nodes(theme, slide)
+        # PL logo placeholders the designer left for icons: each icon replaces one and stands for its label.
+        found, problem = pl_placeholders(slide, theme, slide_h, refs)
+        if problem and notes is not None:
+            notes.append(f"Slide {n}: a PL placeholder {problem}, so this slide's placeholders were left as they are")
+        if found:
+            style = {"drawn": True, "geom": "placeholder", "fill": None, "font": 0, "bold": False}
+            fam = _family(slide, "placeholder", style, [visual_box(f["shape"]) for f in found], slide_w, slide_h,
+                          str(len(found)))
+            for f in found:
+                st = _style(f["label"], theme, nodes)
+                it = _item(n, f["label"], "card", f"s{n}-placeholders", text_layout(f["label"], st["own_drawn"])[0],
+                           -2, title, st)
+                l, t, r, b = f["box"]
+                it.placeholder = {"id": f["shape"].shape_id, "box": (round(l, 3), round(t, 3), round(r - l, 3),
+                                                                     round(b - t, 3)),
+                                  "ids": sorted(f["ids"]), "slot": f["slot"]}
+                it.family = fam
+                items.append(it)
+        inside = {i for f in found for i in f["ids"]}
         boxes = [s for s in colors.leaves(slide.shapes) if s.has_text_frame and s.text_frame.text.strip()
-                 and not _not_an_item(s, slide_h)]
+                 and not _not_an_item(s, slide_h) and s.shape_id not in inside]
         # Empty holders the designer left for icons: the icon goes in the holder and stands for its label.
         for k, group in enumerate(holders(slide, theme, slide_h), 1):
             style = {"drawn": True, "geom": group[0]["kind"], "fill": None, "font": 0, "bold": False}
@@ -493,9 +563,10 @@ def _item(n, shape, kind, set_id, geo, rank, title, st, text=None) -> Item:
                 **{k: geo[k] for k in ("tx_left", "tx_right", "tx_top", "line_h", "align")})
 
 
-def existing_icons(prs: Presentation) -> list[dict]:
+def existing_icons(prs: Presentation, refs=()) -> list[dict]:
     """Icon-like shapes, with the theme slot they're drawn in when it can be read (else color_slot None).
-    Named 'Icon - <id>' when this app (or the skill) placed them. Empty icon holders and dots don't count."""
+    Named 'Icon - <id>' when this app (or the skill) placed them. Empty icon holders, PL logo placeholders
+    (`refs`: the library's reference looks) and dots don't count."""
     found, themes = [], {}
     slide_h = prs.slide_height / EMU
     for n, slide in enumerate(prs.slides, 1):
@@ -507,7 +578,8 @@ def existing_icons(prs: Presentation) -> list[dict]:
                 continue
             w, h = s.width / EMU, s.height / EMU
             if MIN_ICON_IN <= max(w, h) <= 1.6 and min(w, h) > 0 and 0.6 <= w / h <= 1.6 and s.shape_type is not None \
-                    and any(k in str(s.shape_type) for k in ("PICTURE", "GROUP", "FREEFORM")):
+                    and any(k in str(s.shape_type) for k in ("PICTURE", "GROUP", "FREEFORM")) \
+                    and not placeholders.is_placeholder(s, refs):
                 m = re.match(r"Icon - (.+)", s.name or "")
                 found.append({"slide": n, "shape_id": s.shape_id, "size": round(max(w, h), 2),
                               "icon_id": m.group(1) if m else None, "color_slot": colors.icon_slot(theme, s)})

@@ -91,6 +91,7 @@ def test_brand_library_is_valid():
     assert not lib.indexed_from_filenames and not lib.warnings, lib.warnings  # warnings = concept claimed twice
     assert lib.concept_map["growth"]["id"] == "increase-01"
     assert {i.style for i in lib.icons.values()} == {config.DEFAULT_STYLE}
+    assert {i.family for i in lib.all.values()} == {"simple", "detailed"}     # every icon in one visual family
 
 
 GOOD_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#000" d="M2 2h20v20H2z"/></svg>'
@@ -101,13 +102,15 @@ NEW_ICON = {"id": "speed-clock", "category": "operations", "description": "Clock
 def test_add_icon_saves_svg_and_record(tmp_path):
     root = tmp_path / "lib"
     make_library(root)
-    fields = {**NEW_ICON, "tags_ar": "سُرعة، وقت", "preferred_for": "speed, deadline", "rtl_flip": "true"}
+    fields = {**NEW_ICON, "tags_ar": "سُرعة، وقت", "preferred_for": "speed, deadline", "rtl_flip": "true",
+              "family": "Simple"}
     record, warnings = library_edit.add_icon(root, fields, GOOD_SVG)
 
     assert (root / "speed-clock.svg").read_bytes() == GOOD_SVG
     assert record["tags"] == ["speed", "turnaround", "deadline"]   # lowercased, house picks added as tags
     assert record["tags_ar"] == ["سرعة", "وقت"]                     # Arabic comma split, diacritics removed
     assert record["rtl_flip"] is True and record["status"] == "approved" and record["style"] == "outline"
+    assert record["family"] == "simple"
     assert any("license" in w for w in warnings)
     lib = Library(root)
     assert lib.concept_map["deadline"]["id"] == "speed-clock"
@@ -226,6 +229,7 @@ def test_deprecating_an_icon_retires_it(tmp_path):
     ("people-team", {"tags": "team; thumbs up"}, "regional block list"),
     ("people-team", {"pairs_with": "no-such-icon"}, "unknown ids"),
     ("people-team", {"status": "archived"}, "status must be"),
+    ("people-team", {"family": "bold glyphs"}, "family must be one lowercase word"),
     ("people-team", {"tags": ""}, "missing tags"),
 ])
 def test_bad_edit_is_rejected_and_writes_nothing(tmp_path, icon_id, change, expected):
@@ -254,21 +258,42 @@ def test_house_pick_clash_names_the_icon_being_edited(tmp_path):
     assert e.value.errors == ["people-team: 'security' is already the house pick for risk-shield"]
 
 
+def sent_points(content):
+    """(slide entry, point, text) for every point in a request's SLIDES."""
+    points, entry = [], None
+    for line in content.splitlines():
+        m = __import__("re").match(r"SLIDE (\d+) |\s+(\d+)\. (.*)$", line)
+        if m and m.group(1):
+            entry = int(m.group(1))
+        elif m:
+            points.append((entry, int(m.group(2)), m.group(3)))
+    return points
+
+
 class FakeClaude:
-    """Stands in for anthropic.Anthropic(): replies with a JSON label for every item key it is sent."""
-    def __init__(self, label="growth", fail=None, max_items=None, thinking=False, text=None):
-        self.messages, self.calls = self, 0
-        self.label, self.fail, self.max_items, self.thinking, self.text = label, fail, max_items, thinking, text
+    """Stands in for anthropic.Anthropic(): picks one icon (by default the same one) for every point it is sent;
+    asked for the closest icons (a second system block), lists options(text) for each point."""
+    def __init__(self, icon="finance-growth-chart", fail=None, max_items=None, thinking=False, text=None, options=None):
+        self.messages, self.calls, self.systems = self, 0, []
+        self.icon, self.fail, self.max_items, self.thinking, self.text = icon, fail, max_items, thinking, text
+        self.options = options
 
     def create(self, **kw):
         from types import SimpleNamespace as NS
         self.calls += 1
         if self.fail:
             raise self.fail
-        keys = __import__("re").findall(r"(?m)^\s*(\d+:\d+:\d+) \|", kw["messages"][0]["content"])
-        if self.max_items and len(keys) > self.max_items:   # reply cut off mid-JSON
-            return NS(stop_reason="max_tokens", content=[NS(type="text", text='{"' + keys[0] + '": "gro')])
-        text = self.text if self.text is not None else "Labels:\n" + json.dumps({k: self.label for k in keys})
+        points = sent_points(kw["messages"][0]["content"])
+        if self.max_items and len(points) > self.max_items:   # reply cut off mid-JSON
+            return NS(stop_reason="max_tokens", content=[NS(type="text", text='{"choices":[{"slide":0,"po')])
+        icon = self.icon if callable(self.icon) else (lambda text: self.icon)
+        self.systems.append(kw["system"])
+        if len(kw["system"]) > 1:   # the closest icons for flagged placeholders
+            near = self.options or (lambda text: [icon(text)])
+            data = {"options": [{"slide": s, "point": p, "icons": near(t)} for s, p, t in points]}
+        else:
+            data = {"choices": [{"slide": s, "point": p, "icon": icon(t)} for s, p, t in points]}
+        text = self.text if self.text is not None else "Choices:\n" + json.dumps(data)
         blocks = [NS(type="thinking", thinking="")] if self.thinking else []
         return NS(stop_reason="end_turn", content=blocks + [NS(type="text", text=text)])
 
@@ -279,22 +304,22 @@ def slide_items(n):
                  left=0, top=0, w=1, h=1) for k in range(n)]
 
 
-def test_llm_labels_large_decks_in_batches():
+def test_llm_picks_for_large_decks_in_batches(tmp_path):
     from app import concepts
-    items, fake = slide_items(130), FakeClaude(label=" Growth ")
-    assert concepts._extract_llm(items, ["growth"], ["growth"], client=fake) == []
-    assert fake.calls == 3 and {i.concept for i in items} == {"growth"}     # 60 + 60 + 10, labels normalized
+    items, fake = slide_items(130), FakeClaude(icon=" finance-growth-chart ")
+    assert concepts._extract_llm(items, make_library(tmp_path / "lib"), "outline", client=fake) == []
+    assert fake.calls == 3 and {i.icon_pick for i in items} == {"finance-growth-chart"}   # 60 + 60 + 10, trimmed
 
 
 @pytest.mark.parametrize("fake", [FakeClaude(max_items=20), FakeClaude(thinking=True)])
-def test_cut_off_replies_are_split_and_thinking_blocks_skipped(fake):
+def test_cut_off_replies_are_split_and_thinking_blocks_skipped(fake, tmp_path):
     from app import concepts
     items = slide_items(130)
-    assert concepts._extract_llm(items, ["growth"], ["growth"], client=fake) == []
-    assert all(i.concept == "growth" for i in items)
+    assert concepts._extract_llm(items, make_library(tmp_path / "lib"), "outline", client=fake) == []
+    assert all(i.icon_pick == i.concept == "finance-growth-chart" for i in items)
 
 
-def test_api_failures_fall_back_to_keywords_with_a_note():
+def test_api_failures_fall_back_to_keywords_with_a_note(tmp_path):
     import anthropic
     import httpx2
     from app import concepts
@@ -305,12 +330,13 @@ def test_api_failures_fall_back_to_keywords_with_a_note():
                                                        body=None)), "API key was rejected", 1),
         (FakeClaude(text="Sorry, I can't help with that."), "unreadable reply", 3),
     ]
+    lib = make_library(tmp_path / "lib")
     for fake, reason, calls in cases:
         items = slide_items(130)
-        notes = concepts._extract_llm(items, ["growth"], ["growth"], client=fake)
+        notes = concepts._extract_llm(items, lib, "outline", client=fake)
         assert len(notes) == 1 and reason in notes[0] and "130 of 130" in notes[0], notes
         assert fake.calls == calls                                    # a rejected key stops after one request
-        assert all(i.concept == "growth" for i in items)              # keyword matching stood in
+        assert all(i.concept == "growth" and i.icon_pick is None for i in items)   # keyword matching stood in
 
 
 def test_add_only_the_chosen_suggestions(tmp_path):
@@ -1001,3 +1027,476 @@ def test_beside_a_centered_heading_clears_its_wider_second_line():
     picks = [Pick(i, IconRecord("x", "x.svg", "outline", "c", []), "", []) for i in deck.read_items(prs)]
     assert placement.place(picks, tier_settings(), prs) == [] and picks[0].position == "beside"
     assert picks[0].left + picks[0].size <= it.rows[1][0]                 # clear of both lines
+
+
+FAMILY_ICONS = [  # id, family, tags, house picks, contexts
+    ("growth-arrow", "simple", ["growth", "increase"], ["growth"], []),
+    ("growth-chart", "detailed", ["growth", "revenue growth"], [], []),
+    ("people", "simple", ["team", "people"], ["team"], []),
+    ("people-ring", "detailed", ["team", "community"], [], []),
+    ("shield", "simple", ["risk", "security"], ["risk"], []),
+    ("shield-check", "detailed", ["risk", "compliance"], [], []),
+    ("org-chart", "simple", ["organization", "structure"], ["organization"], []),
+    ("merge", "detailed", ["consolidation", "centralization"], [], []),
+    ("tick", "simple", ["approval", "done", "yes"], [], ["operations"]),
+    ("x-mark", "simple", ["rejection", "no"], [], []),
+    ("hand-wave", "simple", ["hand", "greeting"], [], []),                   # blocked by regional rule
+]
+
+
+def family_library(root):
+    """A library with two icon families, like the brand library's simple glyphs and detailed line icons."""
+    root.mkdir(parents=True)
+    recs = []
+    for icon_id, family, tags, house, contexts in FAMILY_ICONS:
+        (root / f"{icon_id}.svg").write_text(SVG.format(d="M4 12h16"))
+        recs.append({"id": icon_id, "file": f"{icon_id}.svg", "status": "approved", "style": "outline",
+                     "family": family, "category": "x", "description": f"Drawing of {icon_id}", "tags": tags,
+                     "preferred_for": house, "contexts": contexts})
+    (root / "icons.json").write_text(json.dumps(recs))
+    return Library(root)
+
+
+def pick_item(slide, sid, text, pick, set_id="s"):
+    """An item as Claude left it: its one pick, or "" when nothing fits."""
+    from app.models import Item
+    return Item(slide=slide, shape_id=sid, text=text, kind="card", left=sid, top=0, w=1, h=1, set_id=set_id,
+                concept=pick or None, concepts=[pick] if pick else [], icon_pick=pick)
+
+
+def test_contexts_alone_never_match_and_uk_spellings_and_plurals_resolve(tmp_path):
+    lib = family_library(tmp_path / "lib")
+    assert "tick" not in [i.id for i in lib.search("operations", "outline")]   # only a context, not a meaning
+    assert lib.lookup("Organisation") == "organization" and lib.lookup("teams") == "team"
+    assert lib.lookup("weather") is None
+    from app.library import spellings
+    assert spellings("business processes") == ["business processes", "business processe"]   # "-ss" kept
+
+
+def test_the_prompt_gives_claude_the_library_but_no_concept_map(tmp_path):
+    from app import concepts
+    prompt = concepts.system_prompt(family_library(tmp_path / "lib"), "outline")
+    assert "growth-arrow | simple | Drawing of growth-arrow | growth, increase\n" in prompt
+    assert "house pick" not in prompt and "CONCEPT MAP" not in prompt
+    assert "hand-wave" not in prompt                                     # regional block list
+    assert '"simple" = bold, minimal glyphs' in prompt and "Use one family for every point" in prompt
+    assert '{"choices":[{"slide":<slide number>' in prompt
+    plain = concepts.system_prompt(make_library(tmp_path / "plain"), "outline")   # a library without families
+    assert "style variants of the same pictogram" in plain
+
+
+def test_each_set_is_one_slide_entry_and_claudes_choices_map_back(tmp_path):
+    from app import concepts
+    lib = family_library(tmp_path / "lib")
+    items = [pick_item(4, 1, "Revenue growth\nUp 22% on last year", None, "a"),
+             pick_item(4, 2, "Team expansion", None, "a"),
+             pick_item(4, 3, "Our approach", None, "b"),                 # another set on the same deck slide
+             pick_item(5, 1, "Risk management", None, None)]
+    for i in items:
+        i.icon_pick = None
+    sent = []
+    names = {"Revenue growth | Up 22% on last year": "growth-chart | detailed", "Team expansion": "people-ring",
+             "Our approach": "", "Risk management": "shield-made-up"}
+
+    def icon(text):
+        sent.append(text)
+        return names[text]
+    notes = concepts._extract_llm(items, lib, "outline", client=FakeClaude(icon=icon))
+    assert sent == [*names, "Risk management"]           # a headline and its gist per point; the invented name
+                                                         # breaks rule 3, so that point goes back once
+    assert [i.icon_pick for i in items] == ["growth-chart", "people-ring", "", ""]
+    assert notes == ["Claude named 1 icons that aren't in the library (shield-made-up); those items got no icon"]
+    content = concepts._describe(concepts._groups(items))
+    assert "SLIDE 0 (deck slide 4)\n  0. Revenue growth" in content and "SLIDE 1 (deck slide 4)\n  0. Our" in content
+
+
+def test_sets_that_break_a_rule_go_back_to_claude_once(tmp_path):
+    from types import SimpleNamespace as NS
+    from app import concepts
+    lib = family_library(tmp_path / "lib")
+    items = [pick_item(2, 1, "Interviews", None), pick_item(2, 2, "Secondary interviews", None),
+             pick_item(3, 1, "Revenue growth", None, "b")]
+
+    class Claude:
+        def __init__(self):
+            self.messages, self.sent = self, []
+
+        def create(self, **kw):
+            content = kw["messages"][0]["content"]
+            self.sent.append(content)
+            again = content.startswith(concepts.RETRY)   # the first answer reuses an icon, the second doesn't
+            picks = {"Interviews": "people", "Secondary interviews": "x-mark" if again else "people",
+                     "Revenue growth": "growth-arrow"}
+            choices = [{"slide": s, "point": p, "icon": picks[t]} for s, p, t in sent_points(content)]
+            return NS(stop_reason="end_turn", content=[NS(type="text", text=json.dumps({"choices": choices}))])
+
+    fake = Claude()
+    assert concepts._extract_llm(items, lib, "outline", client=fake) == []
+    assert len(fake.sent) == 2 and "Revenue growth" not in fake.sent[1]      # only the set that broke a rule
+    assert 'Earlier choices: 0 = "people", 1 = "people". Broke rule 4 ("people" is used twice).' in fake.sent[1]
+    assert [i.icon_pick for i in items] == ["people", "x-mark", "growth-arrow"]
+    assert concepts._broken(["growth-arrow", "people-ring", ""], {"growth-arrow": "simple", "people-ring": "detailed"}) \
+        == 'rule 5 (it mixes the detailed and simple families), rule 6 (some points got "" and others an icon)'
+
+
+def test_an_icon_is_used_once_per_slide(tmp_path):
+    from app.selector import Selector
+    lib = family_library(tmp_path / "lib")
+    yes1, no, yes2 = (pick_item(2, n, t, i) for n, t, i in ((1, "Yes", "tick"), (2, "No", "x-mark"),
+                                                           (3, "Yes", "tick")))
+    picks, flags = Selector(lib, tier_settings()).pick_set([yes1, no, yes2])
+    assert picks == [] and "Claude gave it tick, which another item on this slide already has" in flags[0].reason
+    a, b = pick_item(1, 1, "Revenue growth", "growth-arrow"), pick_item(1, 2, "Team", "people")
+    picks, flags = Selector(lib, tier_settings()).pick_set([a, b])
+    assert flags == [] and [p.icon.id for p in picks] == ["growth-arrow", "people"]
+    assert picks[0].reason == "Claude's pick"
+
+
+def test_a_set_never_mixes_icon_families_and_is_all_or_nothing(tmp_path):
+    from app.selector import Selector
+    lib = family_library(tmp_path / "lib")
+    growth, team = pick_item(1, 1, "Revenue growth", "growth-arrow"), pick_item(1, 2, "Team", "people-ring")
+    picks, flags = Selector(lib, tier_settings()).pick_set([growth, team])      # simple next to detailed
+    assert picks == [] and all("would mix families (detailed and simple)" in f.reason for f in flags)
+    risk, blank = pick_item(2, 1, "Risk", "shield"), pick_item(2, 2, "Our heritage", "")
+    picks, flags = Selector(lib, tier_settings()).pick_set([risk, blank])        # one point has no icon
+    assert picks == [] and all(f.reason == "set left without icons: Claude found no icon that genuinely fits "
+                                           "on 'Our heritage'" for f in flags)
+    picks, flags = Selector(lib, tier_settings()).pick_set([pick_item(3, 1, "Vision", ""), pick_item(3, 2, "Values", "")])
+    assert picks == [] and "no icon that genuinely fits every item" in flags[0].reason
+
+
+def test_the_same_label_keeps_its_icon_across_the_deck(tmp_path):
+    from app.selector import Selector
+    lib = family_library(tmp_path / "lib")
+    sel = Selector(lib, tier_settings())
+    first, _ = sel.pick_set([pick_item(1, 1, "Risk management", "shield", set_id="a")])
+    again, _ = sel.pick_set([pick_item(7, 1, "Risk  management", "shield-check", set_id="b")])   # another batch
+    assert first[0].icon.id == again[0].icon.id == "shield"
+    assert again[0].reason == "same icon as this label on slide 1 (Claude picked shield-check here)"
+    row, _ = sel.pick_set([pick_item(9, 1, "Risk management", "shield-check", set_id="c"),
+                           pick_item(9, 2, "Team", "people-ring", set_id="c")])
+    assert [p.icon.id for p in row] == ["shield-check", "people-ring"]    # the label's icon would mix families
+
+
+def test_claudes_picks_drive_the_deck(tmp_path, monkeypatch):
+    import anthropic
+    lib = family_library(tmp_path / "lib")
+    make_deck(tmp_path / "deck.pptx", ["Revenue growth of 22%", "Team expansion", "Risk management"])
+    names = {"Revenue growth of 22%": "growth-chart", "Team expansion": "people-ring",
+             "Risk management": "shield-check"}
+    monkeypatch.setattr(config, "USE_LLM", True)
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: FakeClaude(icon=names.get))
+    r = pipeline.run(tmp_path / "deck.pptx", lib, "suggest")
+    assert [p.icon.id for p in r.picks] == ["growth-chart", "people-ring", "shield-check"]
+    assert all(p.reason == "Claude's pick" for p in r.picks)
+
+
+# --- PL logo placeholders ---------------------------------------------------------------------------------------
+P_LETTER = [(0, 0), (40, 0), (55, 12), (55, 38), (40, 50), (15, 50), (15, 100), (0, 100)]
+L_LETTER = [(60, 0), (75, 0), (75, 85), (100, 85), (100, 100), (60, 100)]
+
+
+def pl_logo(shapes, x, y, size, color=None, p_letter=P_LETTER, name="Group"):
+    """A stand-in PL logo drawn the way a template copy is: a ring and freeform letters, grouped."""
+    from pptx.enum.shapes import MSO_SHAPE
+    logo = shapes.add_group_shape()
+    logo.name = name
+    logo.shapes.add_shape(MSO_SHAPE.DONUT, Inches(x), Inches(y), Inches(size), Inches(size))
+    for points in (p_letter, L_LETTER):
+        ff = logo.shapes.build_freeform(*points[0], scale=Inches(size) / 100)
+        ff.add_line_segments(points[1:], close=True)
+        ff.convert_to_shape(Inches(x), Inches(y))
+    for part in logo.shapes if color is not None else ():
+        part.fill.solid()
+        part.fill.fore_color.theme_color = color
+    return logo
+
+
+def placeholder_library(root):
+    lib_root = root / "lib"
+    make_library(lib_root)
+    (lib_root / "placeholders").mkdir()
+    prs = Presentation()
+    pl_logo(prs.slides.add_slide(prs.slide_layouts[6]).shapes, 1, 1, 1.0)
+    prs.save(lib_root / "placeholders" / "pl-logo.pptx")
+    return Library(lib_root)
+
+
+def placeholder_deck(path, nested=True):
+    """Slide 1: three headings, each with a PL logo above it (moved, resized, recolored); the third card is a
+    group the designer then stretched. A look-alike logo with a different P stands by itself. Slide 2: plain
+    headings, no placeholders."""
+    from pptx.enum.dml import MSO_THEME_COLOR
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    for x, text, size in ((1, "Revenue growth", 0.6), (5, "Team expansion", 0.8)):
+        pl_logo(slide.shapes, x + 1, 2.0, size, MSO_THEME_COLOR.ACCENT_2)
+        slide.shapes.add_textbox(Inches(x), Inches(2.9), Inches(3), Inches(0.6)).text_frame.text = text
+    card = slide.shapes.add_group_shape() if nested else slide.shapes
+    pl_logo(card.shapes if nested else card, 9.5, 2.0, 0.6, MSO_THEME_COLOR.ACCENT_2)
+    card_text = (card.shapes if nested else card).add_textbox(Inches(8.5), Inches(2.9), Inches(3), Inches(0.6))
+    card_text.text_frame.text = "Risk management"
+    if nested:   # the designer stretched the card: its children are drawn 1.5 times their own size
+        ext = card._element.grpSpPr.find(f"{{{NS_A}}}xfrm/{{{NS_A}}}ext")
+        ext.set("cx", str(int(int(ext.get("cx")) * 1.5)))
+        ext.set("cy", str(int(int(ext.get("cy")) * 1.5)))
+    decoy = [(0, 0), (40, 0), (55, 20), (40, 50), (15, 50), (15, 100), (0, 100)]
+    pl_logo(slide.shapes, 6, 5.5, 0.6, p_letter=decoy)
+    slide2 = prs.slides.add_slide(prs.slide_layouts[6])
+    for x, text in ((2, "Talent pipeline"), (7, "Revenue growth")):
+        slide2.shapes.add_textbox(Inches(x), Inches(4), Inches(3), Inches(0.6)).text_frame.text = text
+    prs.save(path)
+
+
+NS_A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+
+def test_placeholders_are_found_by_look_however_moved_resized_or_recolored(tmp_path):
+    from app import deck, placeholders
+    lib = placeholder_library(tmp_path)
+    placeholder_deck(tmp_path / "d.pptx", nested=False)
+    prs = Presentation(tmp_path / "d.pptx")
+    assert len(lib.placeholders) == 1 and lib.warnings == []
+    found = placeholders.find(prs.slides[0], lib.placeholders)
+    assert sorted(round(s.left / 914400, 1) for s in found) == [2.0, 6.0, 9.5]   # not the look-alike at 6, 5.5
+    assert placeholders.find(prs.slides[0], []) == []                            # no reference, no names: none
+    assert len(deck.existing_icons(prs)) == 4 and len(deck.existing_icons(prs, lib.placeholders)) == 1  # logos aren't icons
+    items = [i for i in deck.read_items(prs, refs=lib.placeholders) if i.placeholder]
+    assert [i.text for i in items] == ["Revenue growth", "Team expansion", "Risk management"]
+    assert all(i.rank == -2 and i.set_id == "s1-placeholders" for i in items)
+    assert [i.placeholder["box"][2] for i in items] == [0.6, 0.8, 0.6]
+
+
+def test_the_brand_svg_placeholder_is_found_by_what_it_draws():
+    """The confirmed PL logo is an SVG picture. The reference is the copy PowerPoint rewrote on insert (absolute
+    path commands, no metadata); the original file, recolored or without its provenance block, still matches it.
+    Another square SVG icon doesn't."""
+    import re
+    from app import placeholders
+    from app.icon_tools import insert_icon
+    refs, warnings = placeholders.load_refs(BRAND_LIBRARY / "placeholders")
+    assert len(refs) == 1 and warnings == []
+    svg = (BRAND_LIBRARY / "placeholders" / "pl-logo.svg").read_bytes()
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    insert_icon(prs, 1, svg, 1, 1, 0.6, "C0504D", name="Picture 1")
+    insert_icon(prs, 1, re.sub(rb"<metadata>.*?</metadata>", b"", svg, flags=re.S), 3, 1, 0.8, "002528", name="Picture 2")
+    insert_icon(prs, 1, (BRAND_LIBRARY / "Target.svg").read_bytes(), 5, 1, 0.6, "002528", name="Picture 3")
+    assert [s.name for s in placeholders.find(slide, refs)] == ["Picture 1", "Picture 2"]
+
+
+def test_a_shape_named_as_a_placeholder_counts_without_a_reference(tmp_path):
+    from app import placeholders
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    pl_logo(slide.shapes, 1, 1, 0.6, name="PL logo")
+    star = slide.shapes.add_shape(1, Inches(4), Inches(1), Inches(0.6), Inches(0.6))
+    star.name = "Icon placeholder 2"
+    pl_logo(slide.shapes, 7, 1, 0.6, name="Group 7")
+    assert [s.name for s in placeholders.find(slide, [])] == ["PL logo", "Icon placeholder 2"]
+
+
+def test_replace_puts_each_icon_in_its_placeholders_place(tmp_path):
+    from app import colors
+    lib = placeholder_library(tmp_path)
+    placeholder_deck(tmp_path / "d.pptx")
+    before = Presentation(tmp_path / "d.pptx").slides[0]
+    boxes = {s.shape_id: (s.left, s.top, s.width, s.height) for s in colors.leaves(before.shapes, groups=True)}
+    r = pipeline.run(tmp_path / "d.pptx", lib, "replace")
+    assert [(p.item.text, p.icon.id) for p in r.picks] == [("Revenue growth", "finance-growth-chart"),
+                                                          ("Team expansion", "people-team"),
+                                                          ("Risk management", "risk-shield")]
+    assert {p.position for p in r.picks} == {"in its placeholder"} and r.gaps == []
+    assert not any(p.item.slide == 2 for p in r.picks)              # replace mode: nothing where there's no placeholder
+    p = r.picks[2]                                                  # the stretched card: its logo is 0.9in on the slide
+    assert abs(p.size - 0.9) < 0.01 and all(q.color_slot == "accent2" and "placeholder's color" in q.color_note
+                                            for q in r.picks)
+    out = Presentation(r.output_file).slides[0]
+    shapes = list(colors.leaves(out.shapes, groups=True))
+    icons = {s.name: s for s in shapes if s.name.startswith("Icon - ")}
+    assert len(icons) == 3 and len([s for s in shapes if s.name == "Group"]) == 1   # only the look-alike is left
+    for p in r.picks:
+        icon = icons[f"Icon - {p.icon.id}"]
+        l, t, w, h = boxes[p.item.placeholder["id"]]
+        cx, cy = icon.left + icon.width / 2, icon.top + icon.height / 2
+        assert abs(cx - (l + w / 2)) < 9144 and abs(cy - (t + h / 2)) < 9144    # centered where the logo was
+        assert abs(max(icon.width, icon.height) - min(w, h)) < 9144              # as big as the logo
+    nested = icons["Icon - risk-shield"]
+    assert nested._element.getparent().tag.endswith("grpSp")                   # still inside its card
+
+
+def test_add_mode_fills_placeholders_and_finds_spots_only_on_other_slides(tmp_path):
+    lib = placeholder_library(tmp_path)
+    placeholder_deck(tmp_path / "d.pptx", nested=False)
+    r = pipeline.run(tmp_path / "d.pptx", lib, "suggest")
+    on_one = [p for p in r.picks if p.item.slide == 1]
+    assert len(on_one) == 3 and all(p.item.placeholder for p in on_one)
+    assert any(p.item.slide == 2 for p in r.picks)                  # no placeholders there: it finds the spots
+    saved = json.loads(json.dumps(report.to_dict(r)))
+    out, _ = pipeline.insert(tmp_path / "d.pptx", lib, pipeline.placements_from_report(saved, [0]), saved["settings"])
+    assert len([s for s in Presentation(out).slides[0].shapes if s.name == "Group"]) == 3   # one logo replaced
+
+
+def growth_and_steps_deck(path):
+    """Two PL placeholders over 'Revenue growth' and 'Next steps'. 'Next steps' has no metaphor, so the set is
+    flagged."""
+    from pptx.enum.dml import MSO_THEME_COLOR
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    for x, text in ((1, "Revenue growth"), (5, "Next steps")):
+        pl_logo(slide.shapes, x + 1, 2.0, 0.6, MSO_THEME_COLOR.ACCENT_2)
+        slide.shapes.add_textbox(Inches(x), Inches(2.9), Inches(3), Inches(0.6)).text_frame.text = text
+    prs.save(path)
+
+
+def test_flagged_placeholders_offer_the_closest_icons_and_take_the_one_chosen(tmp_path):
+    """'Revenue growth' offers its closest icons, with the spot, color and background its icon would get; the one a
+    designer chooses replaces its placeholder. 'Next steps' offers none but still takes an icon from the library."""
+    from app import colors
+    lib = placeholder_library(tmp_path)
+    growth_and_steps_deck(tmp_path / "d.pptx")
+    saved = json.loads(json.dumps(report.to_dict(pipeline.run(tmp_path / "d.pptx", lib, "replace"))))
+    assert saved["picks"] == [] and [f["item"]["text"] for f in saved["flags"]] == ["Revenue growth", "Next steps"]
+    growth, steps = saved["flags"]
+    assert growth["options"][0] == "finance-growth-chart" and growth["spot"]["color_slot"] == "accent2"
+    assert abs(growth["spot"]["size"] - 0.6) < 0.01 and growth["spot"]["bg"] == "FFFFFF"
+    assert steps["options"] == [] and steps["spot"]                     # nothing near it, but a designer can search
+    assert saved["slide_size"] == [13.333, 7.5]
+    assert "closest icons, for a designer to choose: finance-growth-chart" in saved["markdown"]
+
+    out, skipped = pipeline.insert(tmp_path / "d.pptx", lib, pipeline.placements_from_report(
+        saved, [], {0: "finance-growth-chart"}), saved["settings"])
+    shapes = list(colors.leaves(Presentation(out).slides[0].shapes, groups=True))
+    icon = next(s for s in shapes if s.name == "Icon - finance-growth-chart")
+    assert skipped == [] and abs(icon.left / 914400 - 2.0) < 0.01 and abs(icon.width / 914400 - 0.6) < 0.01
+    assert len([s for s in shapes if s.name == "Group"]) == 1              # 'Next steps' keeps its placeholder
+
+
+def test_review_screen_shows_flagged_slides_and_adds_the_icons_chosen(tmp_path, monkeypatch):
+    """Slide pictures come from the copy with icons, rendered once per run and kept until icons are added. A
+    designer may choose any approved icon in the deck's style, not only the options. Previews get recolored icons."""
+    from fastapi.testclient import TestClient
+    from app import main, render
+    monkeypatch.setattr(main, "library", placeholder_library(tmp_path))
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path / "jobs")
+    rendered = []
+
+    def fake_slides(deck, numbers, out_dir, aspect, width=render.WIDTH_PX):
+        rendered.append((Path(deck).name, numbers, round(aspect, 2)))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for n in numbers:
+            (out_dir / f"slide-{n}.png").write_bytes(b"png")
+    monkeypatch.setattr(render, "available", lambda: True)
+    monkeypatch.setattr(render, "slides", fake_slides)
+    growth_and_steps_deck(tmp_path / "d.pptx")
+    client = TestClient(main.app)
+    with open(tmp_path / "d.pptx", "rb") as f:
+        job = client.post("/jobs", files={"deck": ("d.pptx", f)}, data={"mode": "replace"}).json()["job"]
+    shots = [client.get(f"/jobs/{job}/slides/1.png") for _ in range(2)]
+    assert [s.content for s in shots] == [b"png", b"png"] and rendered == [("d_icons.pptx", [1], 1.78)]   # once
+    assert client.get(f"/jobs/{job}/slides/2.png").status_code == 404           # no flagged placeholder there
+    assert client.post(f"/jobs/{job}/apply", json={"choices": {"1": "no-such-icon"}}).status_code == 400
+    added = client.post(f"/jobs/{job}/apply", json={"choices": {"1": "people-team"}})   # found by search
+    assert added.status_code == 200 and added.json()["added"] == 1
+    client.get(f"/jobs/{job}/slides/1.png")
+    assert len(rendered) == 2                                                    # the new copy, rendered afresh
+    assert 'stroke="#C0504D"' in client.get("/icons/people-team.svg?color=C0504D").text   # outline icons: stroked
+
+
+def test_a_designer_can_upload_an_icon_for_a_placeholder(tmp_path, monkeypatch):
+    """An upload gets the library's checks, stays with the run (the library doesn't change), previews recolored,
+    and replaces the placeholder it was chosen for."""
+    from fastapi.testclient import TestClient
+    from app import colors, main
+    lib = placeholder_library(tmp_path)
+    monkeypatch.setattr(main, "library", lib)
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path / "jobs")
+    growth_and_steps_deck(tmp_path / "d.pptx")
+    client = TestClient(main.app)
+    with open(tmp_path / "d.pptx", "rb") as f:
+        job = client.post("/jobs", files={"deck": ("d.pptx", f)}, data={"mode": "replace"}).json()["job"]
+    unsafe = SVG.format(d="M4 4h16").replace("<path", '<path onclick="alert(1)"')
+    refused = client.post(f"/jobs/{job}/uploads", files={"file": ("bad.svg", unsafe.encode())})
+    assert refused.status_code == 400 and "script attribute" in refused.json()["detail"][0]
+    up = client.post(f"/jobs/{job}/uploads", files={"file": ("steps.svg", SVG.format(d="M4 12h16M14 6l6 6-6 6").encode())})
+    upload = up.json()
+    assert up.status_code == 200 and upload["id"].startswith("upload:") and upload["name"] == "steps.svg"
+    assert 'stroke="#C0504D"' in client.get(f"/jobs/{job}/uploads/{upload['id'][7:]}.svg?color=C0504D").text
+    assert client.post(f"/jobs/{job}/apply", json={"choices": {"1": "upload:000000000000"}}).status_code == 400
+    added = client.post(f"/jobs/{job}/apply", json={"choices": {"1": upload["id"]}})
+    assert added.status_code == 200 and added.json()["added"] == 1
+    shapes = list(colors.leaves(Presentation(next((tmp_path / "jobs" / job).glob("*_icons.pptx"))).slides[0].shapes,
+                                groups=True))
+    icon = next(s for s in shapes if s.name == f"Icon - {upload['id']}")
+    assert abs(icon.left / 914400 - 6.0) < 0.01                                 # where the 'Next steps' logo was
+    assert upload["id"] not in Library(tmp_path / "lib").all                     # the library is unchanged
+
+
+def test_claude_ranks_the_closest_icons_for_flagged_placeholders(tmp_path, monkeypatch):
+    """Names not in the library and blocked icons are dropped; a point left with nothing, or a failed request,
+    gets keyword matches instead. The request reuses the picks' cached library prompt."""
+    import anthropic
+    import httpx2
+    from app import concepts
+    from app.models import Item
+    monkeypatch.setattr(config, "USE_LLM", True)
+    lib = make_library(tmp_path / "lib")
+    items = [Item(slide=1, shape_id=k, text=t, kind="card", left=0, top=0, w=1, h=1)
+             for k, t in enumerate(["Next steps", "Revenue growth"])]
+    near = {"Next steps": ["people-team", "made-up", "partnership-handshake", "risk-shield"], "Revenue growth": []}
+    fake = FakeClaude(options=lambda text: near[text])
+    found, notes = concepts.closest(items, lib, "outline", client=fake)
+    assert found == [["people-team", "risk-shield"], ["finance-growth-chart"]] and notes == []
+    system = fake.systems[0]
+    assert system[0]["text"] == concepts.system_prompt(lib, "outline") and "cache_control" in system[0]
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    found, notes = concepts.closest(items, lib, "outline", client=FakeClaude(
+        fail=anthropic.APIConnectionError(request=request)))
+    assert found == [[], ["finance-growth-chart"]] and "2 flagged placeholders" in notes[0]
+
+
+def test_each_placeholder_gets_its_own_label_closest_pairs_first(tmp_path):
+    from app import deck
+    lib = placeholder_library(tmp_path)
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    pl_logo(slide.shapes, 2, 1.0, 0.6)                              # right on top of "Revenue growth"
+    slide.shapes.add_textbox(Inches(1), Inches(1.6), Inches(3), Inches(0.4)).text_frame.text = "Revenue growth"
+    pl_logo(slide.shapes, 2, 2.05, 0.6)                             # nearer that heading than to its own
+    slide.shapes.add_textbox(Inches(1), Inches(2.85), Inches(3), Inches(0.4)).text_frame.text = "Team expansion"
+    items = [i for i in deck.read_items(prs, refs=lib.placeholders) if i.placeholder]
+    assert [(i.text, i.placeholder["box"][1]) for i in items] == [("Revenue growth", 1.0), ("Team expansion", 2.05)]
+
+
+def test_a_kpi_tiles_placeholder_stands_for_its_description_not_its_value(tmp_path):
+    from pptx.enum.shapes import MSO_SHAPE
+    from app import deck
+    lib = placeholder_library(tmp_path)
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    for x, value, text in ((1, "15-30%", "Reduction in operating costs"), (5, "AED 2.4bn", "Revenue growth")):
+        slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(1.5), Inches(3), Inches(3))   # the tile
+        pl_logo(slide.shapes, x + 1.2, 1.7, 0.6)
+        slide.shapes.add_textbox(Inches(x + 0.2), Inches(2.4), Inches(2.6), Inches(0.8)).text_frame.text = value
+        slide.shapes.add_textbox(Inches(x + 0.2), Inches(3.3), Inches(2.6), Inches(0.6)).text_frame.text = text
+    items = [i for i in deck.read_items(prs, refs=lib.placeholders) if i.placeholder]
+    assert [i.text for i in items] == ["Reduction in operating costs", "Revenue growth"]
+
+
+def test_a_placeholder_without_its_own_label_leaves_the_slide_as_it_is(tmp_path):
+    lib = placeholder_library(tmp_path)
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    pl_logo(slide.shapes, 2, 2.0, 0.6)
+    slide.shapes.add_textbox(Inches(1), Inches(2.8), Inches(3), Inches(0.6)).text_frame.text = "Revenue growth"
+    pl_logo(slide.shapes, 9, 5.5, 0.6)                              # nothing near it
+    prs.save(tmp_path / "d.pptx")
+    r = pipeline.run(tmp_path / "d.pptx", lib, "replace")
+    assert r.picks == [] and r.gaps == ["Slide 1: a PL placeholder has no text beside it or on its panel, so this "
+                                        "slide's placeholders were left as they are"]

@@ -13,7 +13,7 @@ from .library import INDEX_FILE
 
 ORIGINALS_DIR = "originals"
 
-FIELDS = ["id", "file", "status", "style", "category", "description", "description_ar", "tags", "tags_ar",
+FIELDS = ["id", "file", "status", "style", "family", "category", "description", "description_ar", "tags", "tags_ar",
           "preferred_for", "avoid_for", "contexts", "metaphor_strength", "pairs_with", "rtl_flip", "source", "license"]
 LIST_FIELDS = ["tags", "tags_ar", "preferred_for", "avoid_for", "contexts", "pairs_with"]
 REQUIRED = ["id", "file", "status", "style", "category", "description", "tags", "metaphor_strength"]
@@ -53,6 +53,8 @@ def validate_records(records: list[dict], root: Path, new_files=(), focus: str |
         seen.add(rid)
         if r.get("category") and not CATEGORY_RE.fullmatch(r["category"]):
             errors.append(f"{rid}: category must be one lowercase word")
+        if r.get("family") and not CATEGORY_RE.fullmatch(r["family"]):
+            errors.append(f"{rid}: family must be one lowercase word (e.g. simple, detailed)")
         if r.get("status") and r["status"] not in STATUSES:
             errors.append(f"{rid}: status must be approved, sample or deprecated")
         if r.get("metaphor_strength") and r["metaphor_strength"] not in STRENGTHS:
@@ -168,7 +170,7 @@ def build_record(fields: dict) -> dict:
     return {
         "id": icon_id, "file": f"{icon_id}.svg" if icon_id else "",
         "status": text("status").lower() or "approved", "style": text("style").lower() or config.DEFAULT_STYLE,
-        "category": text("category").lower(), "description": text("description"),
+        "family": text("family").lower(), "category": text("category").lower(), "description": text("description"),
         "description_ar": text("description_ar"), "tags": tags, "tags_ar": items("tags_ar", arabic=True),
         "preferred_for": preferred, "avoid_for": items("avoid_for"), "contexts": items("contexts"),
         "metaphor_strength": text("metaphor_strength").lower() or "strong", "pairs_with": items("pairs_with"),

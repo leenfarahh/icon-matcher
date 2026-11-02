@@ -331,12 +331,14 @@ def layers(slide) -> list[tuple[list, bool]]:
     return out
 
 
-def behind(theme, slide, x_in, y_in):
+def behind(theme, slide, x_in, y_in, ignore=()):
     """(hex or IMAGE, what it is) at a point: the background with every filled shape under the point
-    composited on top in z-order."""
+    composited on top in z-order. `ignore`: ids of the slide's own shapes to leave out (a placeholder the icon
+    replaces)."""
     x, y = x_in * EMU, y_in * EMU
     color, where = _slide_background(theme, slide), "the slide background"
-    drawn = [entry for shapes, _ in layers(slide) for entry in boxes(theme, shapes)]
+    drawn = [entry for shapes, own in layers(slide) for entry in boxes(theme, shapes)
+             if not (own and entry[2].shape_id in ignore)]
     for (l, t, r, b), fill, _ in drawn:
         if fill is None or not (l <= x <= r and t <= y <= b):
             continue
@@ -445,11 +447,16 @@ def assign(prs, picks, default_slot: str = "accent1") -> None:
             slide = prs.slides[p.item.slide - 1]
             master = slide.slide_layout.slide_master
             theme = themes.setdefault(id(master), Theme(master))
-            bg, where = behind(theme, slide, p.left + p.size / 2, p.top + p.size / 2)
+            ignore = set(p.item.placeholder["ids"]) if p.item.placeholder else ()   # the logo the icon replaces
+            bg, where = behind(theme, slide, p.left + p.size / 2, p.top + p.size / 2, ignore)
             seen.append((p, bg, where, text_slot(theme, slide, p.item)))
         known = [(bg, where) for _, bg, where, _ in seen if bg != IMAGE]
         labels = [s for *_, s in seen if s in THEME_CLASS and s != default_slot]
-        candidates = [(default_slot, MIN_CONTRAST, "deck color")]
+        # The designer colored the placeholders: their theme color comes first, when it has the contrast.
+        held = Counter(p.item.placeholder["slot"] for p in members if p.item.placeholder
+                       and p.item.placeholder.get("slot") in THEME_CLASS)
+        candidates = [(s, MIN_CONTRAST, "the placeholder's color") for s, _ in held.most_common(1)]
+        candidates += [(default_slot, MIN_CONTRAST, "deck color")]
         candidates += [(s, LABEL_MIN_CONTRAST, "the label's color") for s in dict.fromkeys(labels)]
         candidates += [(s, MIN_CONTRAST, "theme dark/light") for s in FALLBACK_SLOTS if s != default_slot]
 
@@ -459,7 +466,9 @@ def assign(prs, picks, default_slot: str = "accent1") -> None:
         # The designer gave the labels different colors for their backgrounds (white heading on a dark panel,
         # dark heading on a light one): when the deck color doesn't work for all, each icon matches its label.
         own = [s for *_, s in seen]
-        if known and worst(default_slot)[0] < MIN_CONTRAST and len(set(own)) > 1 and all(s in THEME_CLASS for s in own) \
+        placeholder_works = held and (not known or worst(candidates[0][0])[0] >= MIN_CONTRAST)
+        if known and not placeholder_works and worst(default_slot)[0] < MIN_CONTRAST and len(set(own)) > 1 \
+                and all(s in THEME_CLASS for s in own) \
                 and all(bg == IMAGE or contrast(theme.slot_hex(s), bg) >= LABEL_MIN_CONTRAST for _, bg, _, s in seen):
             for p, bg, where, s in seen:
                 ratio = contrast(theme.slot_hex(s), bg) if bg != IMAGE else None
@@ -468,13 +477,14 @@ def assign(prs, picks, default_slot: str = "accent1") -> None:
                                 f"backgrounds" + (f"; {ratio:.1f}:1 on {where} (#{bg})" if ratio else ""))
             continue
         if not known:
-            slot, note = default_slot, f"{default_slot} (deck color): sits on a picture, so contrast wasn't checked"
+            slot, why = candidates[0][0], candidates[0][2]
+            note = f"{slot} ({why}): sits on a picture, so contrast wasn't checked"
         else:
             chosen = next((c for c in candidates if worst(c[0])[0] >= c[1]), None)
             slot, _, why = chosen or max(candidates, key=lambda c: worst(c[0])[0])
             ratio, bg, where = worst(slot)
-            if slot == default_slot:
-                note = f"{slot} (deck color): {ratio:.1f}:1 on {where} (#{bg})"
+            if slot == default_slot or (chosen and why == "the placeholder's color"):
+                note = f"{slot} ({why}): {ratio:.1f}:1 on {where} (#{bg})"
             else:
                 d_ratio, d_bg, d_where = worst(default_slot)
                 note = (f"{slot} ({why}): the deck color {default_slot} is only {d_ratio:.1f}:1 on {d_where} "

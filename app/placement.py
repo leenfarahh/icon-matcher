@@ -7,7 +7,8 @@ tables, other cards or icons, including the layout's and master's decorations.
 
 Each set (a component: all nodes of a diagram, all headings of a set of columns, a list) shares one
 placement and gets icons on every member or none. Labels of empty icon holders get their icon inside the
-holder. Text inside a drawn shape tries "above" (inside the shape) then "beside"; plain text tries "beside" then
+holder; labels of PL logo placeholders get theirs where the placeholder is, at its size (no checks: the designer
+chose the spot). Text inside a drawn shape tries "above" (inside the shape) then "beside"; plain text tries "beside" then
 "above"; lists go beside. When nothing fits, the whole set is flagged "no room". Sets with the same structure on
 different slides (a family) share one placement and size."""
 from collections import defaultdict
@@ -93,6 +94,13 @@ class Placer:
         """Place sets that share a structure on different slides with one option and size, all or none (a
         family of one is just a set). Falls back to each set's own option when no shared one fits them all.
         Returns each set's flags; all empty when placed."""
+        if all(p.item.placeholder for m in sets for p in m):   # the designer set where and how big: no checks
+            for m in sets:
+                for p in m:
+                    left, top, w, h = p.item.placeholder["box"]
+                    size = min(w, h)
+                    self._commit([p], "placeholder", size, [(left + (w - size) / 2, top + (h - size) / 2)])
+            return [[] for _ in sets]
         plans, closest = None, [None] * len(sets)
         for how in _options(sets[0]):
             size = min(_size(m, how, self.settings.tiers) for m in sets)
@@ -137,7 +145,8 @@ class Placer:
         n = members[0].item.slide
         for p, (left, top) in zip(members, spots):
             p.left, p.top, p.size = left, top, size
-            p.position = {"tight": "above", "indent": "beside", "holder": "in its holder"}.get(how, how)
+            p.position = {"tight": "above", "indent": "beside", "holder": "in its holder",
+                          "placeholder": "in its placeholder"}.get(how, how)
             p.indent = round(size + gap_for(size), 3) if how == "indent" else 0.0
             p.flip = p.item.rtl and p.icon.rtl_flip
             self.placed[n].append((left, top, left + size, top + size))

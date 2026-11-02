@@ -20,6 +20,7 @@ The library is one flat JSON file next to the SVGs. Nothing is generated.
 |---|---|---|
 | `brand_icons/icons.json` | **The library.** A flat list, one record per icon | Designers (the only file anyone edits) |
 | `brand_icons/*.svg` | The icons, referenced by each record's `file` | Added by designers |
+| `placeholders/*.pptx` | How the PL logo placeholder looks: every shape on these slides is one reference copy | Designers (paste the placeholder exactly as used in decks) |
 
 The concept map (concept -> house pick + alternates) is built when the
 library loads: each concept in an icon's `preferred_for` points to that icon,
@@ -42,6 +43,7 @@ Save as **UTF-8** so Arabic survives. Lists are JSON arrays
 | `file` | yes | file name in `brand_icons/` | The SVG |
 | `status` | yes | `approved` / `sample` / `deprecated` | Only `approved` is loaded; the others are skipped |
 | `style` | yes | e.g. `outline`, `filled` | One style per deck |
+| `family` | no | `simple` / `detailed` | Visual family within the style: `simple` = bold, minimal glyph (the house set); `detailed` = finer lines, more elements. A set never mixes families; give every new icon one |
 | `category` | yes | one word (`finance`, `people`, `risk`) | Which category file it lands in |
 | `description` | yes | short English phrase | SVG title, alt text, search fallback |
 | `description_ar` | no | short Arabic phrase | Arabic alt text and SVG desc |

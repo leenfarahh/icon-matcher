@@ -30,12 +30,24 @@
   .summary { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
   .summary b { font-size: 15px; }
   .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; border: 1px solid var(--line); }
-  a.dl { margin-left: auto; text-decoration: none; }
+  a.dl { text-decoration: none; }
+  .summary-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--line); }
   td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   tr:last-child td { border-bottom: 0; }
   h2 { font-size: 14px; margin: 0 0 10px; }
+  details.fold { padding: 0; }
+  details.fold > summary { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-radius: 10px; cursor: pointer; list-style: none; }
+  details.fold > summary::-webkit-details-marker { display: none; }
+  details.fold > summary::before { content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+  details.fold[open] > summary::before { transform: rotate(45deg); }
+  details.fold > summary:hover { background: #fafbfc; }
+  details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  details.fold > summary h2 { margin: 0; }
+  details.fold > summary .count { color: var(--muted); font-size: 13px; }
+  details.fold > .fold-body { padding: 0 20px 18px; }
+  @media (prefers-reduced-motion: reduce) { details.fold > summary::before { transition: none; } }
   .ic { filter: brightness(0); opacity: .85; }
   .pick { display: flex; gap: 10px; align-items: center; }
   .alts { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -74,7 +86,41 @@
   button.small { padding: 3px 10px; font-size: 12px; margin-left: auto; align-self: start; }
   .apply-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
   .apply-bar .note { flex: 1; min-width: 240px; }
-  #apply-msg:not(:empty) { margin-bottom: 12px; }
+  #apply-msg:not(:empty), #choose-msg:not(:empty) { margin-bottom: 12px; }
+  /* review: flagged PL placeholders on their slides */
+  :root { --mark: #ff2d87; --done: #1d8a4a; }
+  .review { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
+  .slide-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .slide-tabs button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .slide-tabs button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .slide-tabs .count { margin-left: 6px; color: var(--muted); font-weight: 400; }
+  .slide-tabs .complete .count { color: var(--done); font-weight: 600; }
+  .slide { position: relative; width: 100%; background: #eef0f3; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .slide .shot, .slide .marks { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .slide .wait { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  .ph { position: absolute; padding: 0; border: 3px solid var(--mark); border-radius: 6px; background: rgba(255, 45, 135, .14); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
+  .ph .num { position: absolute; top: -12px; left: -12px; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: var(--mark); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
+  .ph.chosen { border-color: var(--accent); background: transparent; } .ph.chosen .num { background: var(--accent); }
+  .ph.done { border-color: var(--done); background: transparent; } .ph.done .num { background: var(--done); }
+  .ph.on { border-width: 4px; animation: pulse 1.2s ease-in-out infinite; }
+  .ph:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255, 45, 135, .35); } }
+  @media (prefers-reduced-motion: reduce) { .ph.on { animation: none; } }
+  .ph-preview { position: absolute; border-radius: 4px; pointer-events: none; }
+  .ph-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .chooser { border: 1px solid var(--line); border-radius: 8px; padding: 14px; position: sticky; top: 12px; }
+  .chooser .label-text { font-size: 16px; font-weight: 600; margin: 2px 0 4px; }
+  .chooser input { width: 100%; box-sizing: border-box; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+  .tile { font: inherit; font-size: 11px; display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
+  .tile:hover { border-color: var(--accent); }
+  .tile.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
+  .chooser-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .upload { position: relative; display: inline-flex; width: fit-content; margin-top: 2px; padding: 7px 16px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 400; cursor: pointer; }
+  .upload:hover { border-color: var(--accent); }
+  .upload:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .apply-ok { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .apply-ok span { flex: 1; }
   .apply-ok ul { flex-basis: 100%; }
@@ -103,8 +149,9 @@
         <label>Deck (.pptx)<input type="file" name="deck" accept=".pptx" required></label>
         <label>Mode
           <select name="mode">
+            <option value="replace" selected>Replace PL placeholders (writes a copy)</option>
             <option value="suggest">Suggest only (report, deck untouched)</option>
-            <option value="add">Add icons (writes a copy)</option>
+            <option value="add">Add icons where they fit (writes a copy)</option>
           </select>
         </label>
         <label>Slides (optional)<input name="slides" placeholder="e.g. 2,3,5" size="12"></label>
@@ -146,6 +193,8 @@
           <small id="id-check">Lowercase words joined by hyphens</small></label>
         <label>Category *<input name="category" list="cats" required placeholder="e.g. data" autocomplete="off"></label>
         <label>Style<select name="style"><option>outline</option><option>filled</option></select></label>
+        <label>Family<select name="family"><option value="detailed">detailed (fine lines, more elements)</option><option value="simple">simple (bold, minimal glyph)</option></select>
+          <small>Icons of different families never share a slide</small></label>
         <label>Status<select name="status"><option>approved</option><option>sample</option><option>deprecated</option></select></label>
         <label class="wide">Description *<input name="description" required placeholder="What the icon shows, e.g. Bar chart with an arrow pointing up"></label>
         <label class="wide">Arabic description<input name="description_ar" dir="rtl"></label>
@@ -245,6 +294,7 @@ function renderLibrary() {
       <div style="margin:8px 0">
         <span class="badge">${esc(i.category)}</span>
         <span class="badge">${esc(i.style)}</span>
+        ${i.family ? `<span class="badge">${esc(i.family)}</span>` : ""}
         ${i.metaphor_strength === "weak" ? '<span class="badge weak">weak metaphor</span>' : ""}
         ${i.rtl_flip ? '<span class="badge rtl">mirrors in Arabic</span>' : ""}
         ${i.status !== "approved" ? `<span class="badge weak">${esc(i.status)}</span>` : ""}
@@ -280,7 +330,7 @@ function openForm(icon) {
   field("id").readOnly = !!icon;
   if (icon) {
     for (const k of ["id", "category", "description", "description_ar", "source", "license"]) field(k).value = icon[k] || "";
-    for (const k of ["style", "status"]) {  // keep an unusual stored value selectable rather than silently changing it
+    for (const k of ["style", "status", "family"]) {  // keep an unusual stored value selectable rather than silently changing it
       if (![...field(k).options].some(o => o.value === icon[k])) field(k).add(new Option(icon[k], icon[k]));
       field(k).value = icon[k];
     }
@@ -424,15 +474,25 @@ $("#run").onsubmit = async e => {
   }
 };
 
+// A results section: collapsed until the designer opens it; its header says how much is inside.
+const section = (title, count, body, id = "") => `<details class="panel fold"${id ? ` id="${id}"` : ""}>
+    <summary><h2>${title}</h2>${count ? `<span class="count">${count}</span>` : ""}</summary>
+    <div class="fold-body">${body}</div></details>`;
+
 function renderResult(r) {
   const s = r.settings;
   const tiers = Object.entries(s.tiers).map(([k, v]) => `${k} ${v}"`).join(" · ");
+  // flagged PL placeholders: the designer sees each one on its slide and chooses its icon (or none)
+  const open = r.flags.map((f, n) => ({f, n})).filter(({f}) => f.spot);
   const summary = `<div class="panel summary">
-      <b>${r.mode === "suggest" ? "Suggested" : "Added"} ${r.picks.length} icons · ${r.flags.length} flagged</b>
+      <b>${{suggest: "Suggested", replace: "Replaced placeholders with"}[r.mode] || "Added"} ${r.picks.length} icons · ${r.flags.length} flagged</b>
       <span>Style: ${esc(s.style)}</span>
       <span>Deck color: <span class="swatch" style="background:#${esc(s.color_hex)}"></span> ${esc(s.color_slot || "")} #${esc(s.color_hex)}</span>
       <span class="note" style="margin:0">Tiers: ${esc(tiers)}</span>
-      ${r.output_file ? `<a class="dl" href="jobs/${encodeURIComponent(r.job)}/download"><button class="primary" type="button">Download deck</button></a>` : ""}
+      <span class="summary-actions">
+        ${open.length ? `<button class="secondary" type="button" id="go-review">Choose flagged icons (${open.length})</button>` : ""}
+        ${r.output_file ? `<a class="dl" href="jobs/${encodeURIComponent(r.job)}/download"><button class="primary" type="button">Download deck</button></a>` : ""}
+      </span>
     </div>`;
 
   const choose = r.mode === "suggest";  // suggestions can be added one by one or all at once
@@ -441,7 +501,7 @@ function renderResult(r) {
       <button class="primary" type="button" id="add-selected" disabled>Add selected (0)</button>
       <button class="secondary" type="button" id="add-all">Add all ${r.picks.length}</button>
     </div><div id="apply-msg"></div>` : "";
-  const picks = r.picks.length ? `<div class="panel"><h2>Picks</h2>${bar}<table>
+  const picks = r.picks.length ? section("Picks", `${r.picks.length}`, `${bar}<table>
       <tr>${choose ? '<th class="tick"><input type="checkbox" id="pick-all" title="Select all"></th>' : ""}
         <th>Slide</th><th>Item</th><th>Concept</th><th>Icon</th><th>Color</th><th>Why</th><th>Alternatives</th></tr>
       ${r.picks.map((p, n) => ({p, n})).sort((a, b) => a.p.item.slide - b.p.item.slide).map(({p, n}) => `<tr>
@@ -450,53 +510,245 @@ function renderResult(r) {
         <td>${esc(p.item.text)}<div class="note" style="margin:0">${esc(p.item.kind)}${p.flip ? " · mirrored" : ""}${
           p.position ? ` · ${esc(p.position)} the text` : ""}${
           p.indent ? ` · <b>layout change:</b> text moved ${esc(p.indent.toFixed(2))}in ${p.item.rtl ? "left" : "right"} to make room` : ""}</div></td>
-        <td class="mono">${esc(p.item.concept)}</td>
+        <td class="mono">${p.item.concept && p.item.concept !== p.icon.id ? esc(p.item.concept) : "-"}</td>
         <td><div class="pick">${img(p.icon.id, 40)}<b>${esc(p.icon.id)}</b></div></td>
         <td class="color-cell"><span class="swatch" style="background:#${esc(p.color_hex)}"></span>
           <b>${esc(p.color_slot)}</b><div class="note" style="margin:0">${esc(p.color_note)}</div></td>
         <td>${esc(p.reason)}</td>
         <td><div class="alts">${p.alternatives.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div></td>
-      </tr>`).join("")}</table></div>` : "";
+      </tr>`).join("")}</table>`) : "";
 
-  const flags = r.flags.length ? `<div class="panel"><h2>Flagged (no icon added)</h2><table>
+  const review = open.length ? section("Choose icons for flagged placeholders", `${open.length}`, `
+      <div class="apply-bar">
+        <span class="note" style="margin:0">${open.length} placeholder${open.length === 1 ? " was" : "s were"} left without an icon.
+          Click a highlighted logo, then choose one of its closest icons (best first; they aren't perfect matches) or search the library.
+          ${choose ? "The copy also gets the picks you ticked above." : "You get a new copy with the icons already added plus your choices."}</span>
+        <button class="primary" type="button" id="add-chosen" disabled>Add chosen (0)</button>
+      </div><div id="choose-msg"></div>
+      <div class="review">
+        <div><div class="slide-tabs" id="slide-tabs"></div>
+          <div class="slide" id="slide" style="aspect-ratio: ${r.slide_size[0]} / ${r.slide_size[1]}"></div>
+          <div class="note">Arrow keys move between placeholders.</div></div>
+        <aside class="chooser" id="chooser" aria-live="polite"></aside>
+      </div>`, "review") : "";
+  const flags = r.flags.length ? section("Flagged (no icon added)", `${r.flags.length}`, `<table>
       <tr><th>Slide</th><th>Item</th><th>Concept</th><th>Reason</th><th>Options</th></tr>
-      ${r.flags.map(f => `<tr>
+      ${r.flags.map((f, n) => `<tr>
         <td>${f.item.slide}</td><td>${esc(f.item.text)}</td><td class="mono">${esc(f.item.concept) || "-"}</td>
         <td>${esc(f.reason)}</td>
-        <td><div class="alts">${f.options.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div></td>
-      </tr>`).join("")}</table></div>` : "";
+        <td><div class="alts">${f.options.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div>${
+          f.spot ? `<button class="secondary" type="button" data-review="${n}" style="margin-top:8px">Choose on the slide</button>` : ""}</td>
+      </tr>`).join("")}</table>`) : "";
 
-  const notes = `<div class="panel"><h2>Settings and gaps</h2>
+  const notes = section("Settings and gaps", r.gaps.length ? `${r.gaps.length} note${r.gaps.length === 1 ? "" : "s"}` : "", `
       ${Object.entries(s.sources).map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("")}
-      ${r.gaps.map(g => `<div>${esc(g)}</div>`).join("")}</div>`;
+      ${r.gaps.map(g => `<div>${esc(g)}</div>`).join("")}`);
 
-  $("#out").innerHTML = summary + picks + flags + notes;
-  if (choose && r.picks.length) wireApply(r);
+  $("#out").innerHTML = summary + picks + review + flags + notes;
+  choices = {};
+  rv = null;
+  wireApply(r);
+  if (open.length) startReview(r, open);
+  document.querySelectorAll("[data-review]").forEach(b => b.onclick = () => showReview(Number(b.dataset.review)));
+  if (open.length) $("#go-review").onclick = () => {   // the first placeholder still without a choice
+    const next = rv.open.find(o => !choices[o.n]) || rv.open.find(o => o.n === rv.sel);
+    showReview(next.n);
+  };
 }
 
+function showReview(n) {
+  $("#review").open = true;
+  selectFlag(n);
+  $("#review").scrollIntoView({behavior: "smooth", block: "start"});
+  const on = $("#slide .ph.on");
+  if (on) on.focus({preventScroll: true});   // arrow keys work from here
+}
+
+// Suggest mode: the ticked picks plus the icons chosen for placeholders. Add and replace: the picks are already in
+// the deck, so every pick goes into the new copy along with the chosen icons.
 function wireApply(r) {
+  const choose = r.mode === "suggest";
   const boxes = [...document.querySelectorAll(".pick-box")];
-  const all = $("#pick-all"), addSel = $("#add-selected");
-  const sync = () => {
-    const n = boxes.filter(b => b.checked).length;
-    addSel.textContent = `Add selected (${n})`;
-    addSel.disabled = !n;
-    all.checked = n === boxes.length;
-    all.indeterminate = n > 0 && n < boxes.length;
+  const all = $("#pick-all"), addSel = $("#add-selected"), addAll = $("#add-all"), addChosen = $("#add-chosen");
+  const goReview = $("#go-review"), reviewCount = $("#review .count"), flagged = r.flags.filter(f => f.spot).length;
+  const ticked = () => choose ? boxes.filter(b => b.checked).map(b => Number(b.value)) : r.picks.map((_, n) => n);
+  const sync = syncCounts = () => {
+    const t = boxes.filter(b => b.checked).length, c = Object.keys(choices).length;
+    if (goReview) goReview.textContent = c ? `Choose flagged icons (${flagged - c} left)` : `Choose flagged icons (${flagged})`;
+    if (reviewCount) reviewCount.textContent = c ? `${c} chosen, ${flagged - c} left` : `${flagged}`;
+    if (addSel) { addSel.textContent = `Add selected (${t + c})`; addSel.disabled = !(t + c); }
+    if (addAll) addAll.textContent = `Add all ${r.picks.length + c}`;
+    if (all) { all.checked = t === boxes.length; all.indeterminate = t > 0 && t < boxes.length; }
+    if (addChosen) { addChosen.textContent = `Add chosen (${c})`; addChosen.disabled = !c; }
   };
   boxes.forEach(b => b.onchange = sync);
-  all.onchange = () => { boxes.forEach(b => b.checked = all.checked); sync(); };
-  addSel.onclick = () => apply(r, boxes.filter(b => b.checked).map(b => Number(b.value)), sync);
-  $("#add-all").onclick = () => apply(r, r.picks.map((_, n) => n), sync);
+  if (all) all.onchange = () => { boxes.forEach(b => b.checked = all.checked); sync(); };
+  if (addSel) addSel.onclick = () => apply(r, ticked(), {...choices}, $("#apply-msg"), sync);
+  if (addAll) addAll.onclick = () => apply(r, r.picks.map((_, n) => n), {...choices}, $("#apply-msg"), sync);
+  if (addChosen) addChosen.onclick = () => apply(r, ticked(), {...choices}, $("#choose-msg"), sync);
+  sync();
 }
 
-async function apply(r, indices, sync) {
-  const buttons = [...document.querySelectorAll("#apply-bar button")];
+// --- review: each flagged placeholder highlighted on a picture of its slide, with a chooser beside it ---------
+let choices = {};          // flag index -> icon id chosen for that placeholder
+let applied = {};          // what the latest copy holds (its slide pictures show those icons)
+let rv = null;             // {r, open (in reading order), slides, sel (flag index), version (of the pictures), q}
+let syncCounts = () => {};
+
+function startReview(r, open) {
+  const box = o => o.f.item.placeholder.box;
+  const order = open.slice().sort((a, b) => a.f.item.slide - b.f.item.slide
+    || Math.round(box(a)[1] * 4) - Math.round(box(b)[1] * 4) || box(a)[0] - box(b)[0]);   // rows, then left to right
+  rv = {r, open: order, slides: [...new Set(order.map(o => o.f.item.slide))], sel: order[0].n, version: 0, q: "",
+        uploads: [], upMsg: ""};
+  applied = {};
+  $("#slide").onclick = e => { const m = e.target.closest(".ph"); if (m) selectFlag(Number(m.dataset.flag)); };
+  $("#slide-tabs").onclick = e => {
+    const t = e.target.closest("[data-slide]");
+    if (t) selectFlag(rv.open.find(o => o.f.item.slide === Number(t.dataset.slide)).n);
+  };
+  $("#chooser").onclick = e => {
+    const t = e.target.closest("[data-icon]");
+    if (t) choose(t.dataset.icon);
+    else if (e.target.closest("#no-icon")) choose(null);
+    else if (e.target.closest("#next-ph")) step(1);
+  };
+  $("#chooser").oninput = e => { if (e.target.id === "lib-q") { rv.q = e.target.value; drawResults(); } };
+  $("#chooser").onchange = e => { if (e.target.id === "up-file") uploadIcon(e.target.files[0]); };
+  $("#review").ontoggle = () => { if ($("#review").open) drawReview(); };
+  $("#review").onkeydown = e => {
+    if (e.target.matches("input") || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+    e.preventDefault();
+    step(e.key === "ArrowRight" ? 1 : -1);
+  };
+  drawReview();
+}
+
+function selectFlag(n) { rv.sel = n; rv.upMsg = ""; drawReview(); }
+
+function step(d) {
+  const k = rv.open.findIndex(o => o.n === rv.sel);
+  selectFlag(rv.open[(k + d + rv.open.length) % rv.open.length].n);
+}
+
+function choose(id) {   // the same icon again, or "No icon", clears the choice
+  if (id && choices[rv.sel] !== id) choices[rv.sel] = id; else delete choices[rv.sel];
+  drawReview();
+  syncCounts();
+}
+
+// an icon is a library id, or "upload:<id>" for one the designer uploaded to this run
+const iconSrc = (id, color = "") => (id.startsWith("upload:")
+  ? `jobs/${encodeURIComponent(rv.r.job)}/uploads/${encodeURIComponent(id.slice(7))}.svg`
+  : `icons/${encodeURIComponent(id)}.svg`) + (color ? `?color=${encodeURIComponent(color)}` : "");
+const nameOf = id => (rv.uploads.find(u => u.id === id) || {}).name || id;
+const tile = id => `<button type="button" class="tile${choices[rv.sel] === id ? " on" : ""}" data-icon="${esc(id)}"
+    aria-pressed="${choices[rv.sel] === id}"><img class="ic" src="${iconSrc(id)}" width="36" height="36" alt="">
+    <span>${esc(nameOf(id))}</span></button>`;
+
+async function uploadIcon(file) {   // checked like a library upload, kept with this run, chosen for the placeholder
+  if (!file) return;
+  const n = rv.sel;
+  $("#up-msg").innerHTML = '<div class="note" style="margin:6px 0 0">Checking the file…</div>';
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const res = await fetch(`jobs/${encodeURIComponent(rv.r.job)}/uploads`, {method: "POST", body});
+    const out = await res.json().catch(() => null);
+    if (!res.ok) {
+      const d = out && out.detail;
+      throw new Error(Array.isArray(d) ? d.map(x => x.msg || x).join("; ") : d || `Server error ${res.status}`);
+    }
+    if (!rv.uploads.some(u => u.id === out.id)) rv.uploads.push({id: out.id, name: out.name});
+    choices[n] = out.id;
+    const notes = [...(out.source_format ? [`Traced from ${out.source_format}: check the preview on the slide.`] : []), ...out.warnings];
+    rv.upMsg = notes.length ? `<div class="hint" style="margin-top:6px"><ul style="margin:0;padding-left:18px">${
+      notes.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "";
+    if (rv.sel === n) drawReview();
+    syncCounts();
+  } catch (err) {
+    $("#up-msg").innerHTML = `<div class="err" style="margin-top:6px">${esc(err.message)}</div>`;
+  }
+}
+
+function drawResults() {
+  const q = rv.q.trim().toLowerCase();
+  const hits = q ? lib.icons.filter(i => i.status === "approved" && i.style === rv.r.settings.style
+    && [i.id, i.description, ...i.tags, ...i.preferred_for].some(v => String(v).toLowerCase().includes(q))).slice(0, 24) : [];
+  $("#lib-results").innerHTML = hits.map(i => tile(i.id)).join("")
+    || (q ? '<span class="note" style="margin:0">No icons match.</span>' : "");
+}
+
+function drawReview() {
+  if (!$("#review").open) return;   // drawn when opened (the toggle below): no slide pictures until then
+  const {r, open, slides} = rv;
+  const was = document.activeElement;   // redrawn below: keep the keyboard where it was
+  const refocus = !$("#review").contains(was) ? null : was.classList.contains("ph") ? ".ph.on"
+    : was.dataset.icon ? `[data-icon="${CSS.escape(was.dataset.icon)}"]` : was.dataset.slide ? `[data-slide="${was.dataset.slide}"]`
+    : was.id ? `#${was.id}` : null;
+  const cur = open.find(o => o.n === rv.sel), slide = cur.f.item.slide;
+  const here = open.filter(o => o.f.item.slide === slide);
+  const state = n => choices[n] && choices[n] === applied[n] ? " done" : choices[n] ? " chosen" : "";
+
+  $("#slide-tabs").innerHTML = slides.map(s => {
+    const on = open.filter(o => o.f.item.slide === s), got = on.filter(o => choices[o.n]).length;
+    return `<button type="button" data-slide="${s}" class="${s === slide ? "on" : ""}${got === on.length ? " complete" : ""}"
+        aria-pressed="${s === slide}">Slide ${s}<span class="count">${got}/${on.length}</span></button>`;
+  }).join("");
+
+  const stage = $("#slide");
+  if (stage.dataset.shot !== `${slide}:${rv.version}`) {   // a new picture only when the slide or the copy changes
+    stage.dataset.shot = `${slide}:${rv.version}`;
+    stage.innerHTML = `<div class="wait">Rendering the flagged slides in PowerPoint. The first one takes a few seconds…</div>
+      <img class="shot" hidden alt="Slide ${slide}" src="jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}">
+      <div class="marks"></div>`;
+    const shot = stage.querySelector(".shot"), wait = stage.querySelector(".wait");
+    shot.onload = () => { shot.hidden = false; wait.hidden = true; };
+    shot.onerror = () => { wait.textContent = "No picture of this slide: PowerPoint isn't available where the tool runs. The placeholders are shown on a blank slide."; };
+  }
+  const [W, H] = r.slide_size, pct = (v, of) => `${(100 * v / of).toFixed(3)}%`;
+  const at = ([l, t, w, h]) => `left:${pct(l, W)};top:${pct(t, H)};width:${pct(w, W)};height:${pct(h, H)}`;
+  stage.querySelector(".marks").innerHTML = here.map(({f, n}, k) => {
+    const pick = choices[n], sp = f.spot, where = at(f.item.placeholder.box);
+    const preview = pick && pick !== applied[n] ? `<span class="ph-preview" style="${where};background:${
+        sp.bg ? "#" + esc(sp.bg) : "rgba(255,255,255,.9)"}"><img alt="" src="${iconSrc(pick, sp.color_hex)}"></span>` : "";
+    return preview + `<button type="button" class="ph${n === rv.sel ? " on" : ""}${state(n)}" style="${where}" data-flag="${n}"
+        aria-label="Placeholder ${k + 1}: ${esc(f.item.text)}${pick ? `, ${esc(nameOf(pick))} chosen` : ""}"><span class="num">${k + 1}</span></button>`;
+  }).join("");
+
+  const k = here.findIndex(o => o.n === rv.sel);
+  $("#chooser").innerHTML = `<div class="lbl" style="margin-top:0">Slide ${slide} · placeholder ${k + 1} of ${here.length}</div>
+    <div class="label-text">${esc(cur.f.item.text)}</div>
+    <div class="note" style="margin:0 0 6px">${esc(cur.f.reason)}</div>
+    ${applied[rv.sel] ? `<div class="note" style="margin:0 0 6px">In the latest copy: <b>${esc(nameOf(applied[rv.sel]))}</b></div>` : ""}
+    <div class="lbl">Closest icons</div>
+    <div class="tiles">${cur.f.options.map(tile).join("") || '<span class="note" style="margin:0">None found: search the library below.</span>'}</div>
+    <div class="lbl">Search the library</div>
+    <input id="lib-q" type="search" placeholder="e.g. people, growth, security" aria-label="Search the library" value="${esc(rv.q)}">
+    <div class="tiles" id="lib-results" style="margin-top:6px"></div>
+    <div class="lbl">Or upload your own</div>
+    <label class="upload"><input type="file" id="up-file"
+      accept=".svg,image/svg+xml,image/png,image/jpeg,image/webp,image/gif,image/bmp">Upload an icon…</label>
+    <div class="note" style="margin:4px 0 0">For this deck only; it isn't added to the library. PNG and JPG are traced into a one-color vector.</div>
+    <div id="up-msg">${rv.upMsg}</div>
+    ${rv.uploads.length ? `<div class="tiles" style="margin-top:6px">${rv.uploads.map(u => tile(u.id)).join("")}</div>` : ""}
+    <div class="chooser-actions">
+      <button class="secondary" type="button" id="no-icon"${choices[rv.sel] ? "" : " disabled"}>No icon</button>
+      <button class="secondary" type="button" id="next-ph">Next placeholder →</button>
+    </div>`;
+  drawResults();
+  const target = refocus && $("#review").querySelector(refocus);
+  if (target && !target.disabled) target.focus({preventScroll: true});
+}
+
+async function apply(r, indices, choices, msg, sync) {
+  const buttons = [...document.querySelectorAll(".apply-bar button")];
   buttons.forEach(b => b.disabled = true);
-  $("#apply-msg").innerHTML = `<div class="note">Adding ${indices.length} icon${indices.length === 1 ? "" : "s"} to a copy of the deck…</div>`;
+  const count = indices.length + Object.keys(choices).length;
+  msg.innerHTML = `<div class="note">Adding ${count} icon${count === 1 ? "" : "s"} to a copy of the deck…</div>`;
   try {
     const res = await fetch(`jobs/${encodeURIComponent(r.job)}/apply`,
-      {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({picks: indices})});
+      {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({picks: indices, choices})});
     const body = await res.json().catch(() => null);
     if (!res.ok) {
       const d = body && body.detail;
@@ -504,11 +756,16 @@ async function apply(r, indices, sync) {
     }
     const skipped = body.skipped.length
       ? `<ul><li>Skipped ${body.skipped.length}: no longer approved in the library (${esc(body.skipped.join(", "))}).</li></ul>` : "";
-    $("#apply-msg").innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
+    msg.innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
         to ${esc(body.output_file)}. The copy holds exactly these icons.</span>
         <a href="${esc(body.download)}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>`;
+    if (rv) {   // the slide pictures now show the new copy, chosen icons included
+      applied = {...choices};
+      rv.version++;
+      drawReview();
+    }
   } catch (err) {
-    $("#apply-msg").innerHTML = `<div class="err">${esc(err.message)}</div>`;
+    msg.innerHTML = `<div class="err">${esc(err.message)}</div>`;
   } finally {
     buttons.forEach(b => b.disabled = false);
     sync();

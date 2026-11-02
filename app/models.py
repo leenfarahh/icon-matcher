@@ -11,6 +11,7 @@ class IconRecord:
     category: str
     tags: list[str]
     status: str = "approved"            # approved | sample | deprecated
+    family: str = ""                    # visual family (simple | detailed): one per slide's set of icons
     description: str = ""
     description_ar: str = ""
     tags_ar: list[str] = field(default_factory=list)
@@ -42,6 +43,7 @@ class Item:
     line: int = 0               # the paragraph's first line in its box, counting wrapped lines (estimated)
     concept: Optional[str] = None
     concepts: list[str] = field(default_factory=list)   # Claude's ideas for its icon, best first (concept = the one used)
+    icon_pick: Optional[str] = None   # Claude's icon for it ("" = nothing fits); None = keyword matching instead
     # Where the item's first line of text sits (inches, estimated), so an icon goes next to the text itself.
     # None: not measured (fall back to the box's edges).
     tx_left: Optional[float] = None
@@ -56,6 +58,7 @@ class Item:
     slide_title: str = ""
     rows: list = field(default_factory=list)   # (left, top, right, bottom) of every line of its shape's text (estimated)
     holder: Optional[tuple] = None   # (center x, center y, largest icon size): the empty holder its icon goes in
+    placeholder: Optional[dict] = None   # the PL logo its icon replaces: {"id", "box" (l, t, w, h), "ids", "slot"}
     family: str = ""            # its set's structure: sets with the same family on different slides look alike
 
 
@@ -90,6 +93,10 @@ class Flag:
     item: Item
     reason: str
     options: list[str] = field(default_factory=list)
+    # A flagged PL placeholder, which a designer can fill (from its options or the library): where that icon goes,
+    # its color, and what's behind it ({"left", "top", "size", "color_slot", "color_hex", "color_note", "bg": hex,
+    # or None on a picture}). None: not choosable.
+    spot: Optional[dict] = None
 
 
 @dataclass
@@ -100,3 +107,4 @@ class Report:
     flags: list[Flag] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     output_file: Optional[str] = None
+    slide_size: tuple = (13.333, 7.5)   # inches (width, height)

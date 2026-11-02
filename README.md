@@ -1,21 +1,50 @@
 # Icon Placer (skeleton)
 
-Reads a .pptx, picks icons from the approved library for each item, inserts them as
-brand-colored vectors, and returns a report. Mirrors the `prezlab-icon-placement` skill.
+Reads a .pptx, replaces the PL logo placeholders designers left for icons with icons from the approved
+library (or finds spots for icons itself), inserts them as brand-colored vectors, and returns a report.
+Mirrors the `prezlab-icon-placement` skill.
 
 ## Run
 
     pip install -r requirements.txt
     copy .env.example .env                 # then paste your ANTHROPIC_API_KEY into .env (optional)
-    python -m app.cli deck.pptx --mode suggest
+    python -m app.cli deck.pptx            # --mode replace (default), suggest or add
     uvicorn app.main:app --reload          # POST /jobs (deck, mode, slides), GET /jobs/{id}/download
     pytest -q                              # also validates brand_icons/icons.json; always offline
+
+Modes: **replace** (default) swaps each PL logo placeholder for an icon and adds nothing anywhere else.
+**add** does that too, and on slides without placeholders finds where icons fit (see Items and placement).
+**suggest** plans what add would do without touching the deck; the UI then adds the chosen picks.
+
+## PL logo placeholders (app/placeholders.py)
+
+Designers drop the PL logo (as vector shapes, copied from the template) where an icon should go. The tool
+recognizes every copy by its look: the same outlines and parts in the same arrangement as a reference copy,
+at any position, size or color. **Setup:** paste one placeholder, exactly as designers use it, onto a blank
+slide and save it as a .pptx in `icons/placeholders/` (every shape on its slides is one reference; add more
+files for other variants). Until then, only shapes named or alt-texted "PL", "PL logo", "Prezlab logo" or
+"Icon placeholder" count.
+
+Each placeholder stands for its label: the heading of the panel it sits on, else the nearest text in line with
+it. Pairs go closest first and a text labels one placeholder only; KPI values ("15-30%", "AED 2.4bn") are never
+labels, so a tile's icon stands for its description. A slide's placeholders are one set (all of them get icons,
+or none). The icon takes the placeholder's place: same group and z-order, centered in its frame at the largest
+size that keeps the icon's proportions; the placeholder is removed. Its color is the placeholder's theme color
+when that has 3:1 contrast with what is behind it (the logo itself left out), else the usual deck color rules.
+Placeholders left in place (no label, or no icon fits) are named in the report with the reason.
 
 Settings (API key, model, library and work folders) live in `.env`, which `app/config.py` loads.
 Real environment variables override it. Never commit or share `.env`; `.env.example` is the template.
 
 Test UI: run `uvicorn app.main:app --reload` from this folder and open http://127.0.0.1:8000.
-"Run on a deck" uploads a .pptx and shows picks, alternates and flags with icon previews;
+"Run on a deck" uploads a .pptx and shows picks, alternates and flags with icon previews. PL placeholders
+left without an icon appear on pictures of their slides, highlighted ("Choose flagged icons" next to Download
+goes there): the designer clicks one, chooses from its closest icons, searches the library or uploads an icon
+of their own (SVG, or PNG/JPG traced; checked like a library upload, kept with the run, not added to the
+library), sees it in place, and "Add chosen" writes a new copy (`GET /jobs/{id}/slides/{n}.png`,
+`POST /jobs/{id}/uploads`, `POST /jobs/{id}/apply` with `choices`). Slide pictures are made by
+PowerPoint (`app/render.py`), so they need PowerPoint on the machine running the tool; without it the
+placeholders show on a blank slide;
 "Library" browses `icons.json` by tag (English or Arabic) and shows the house pick for a concept;
 "Add icon" uploads an SVG with its fields, checks it against the same rules as `pytest`, and appends it
 to `icons.json` (`POST /library/icons`). PNG, JPG, WebP, GIF and BMP uploads are traced into a one-color
@@ -32,10 +61,15 @@ package: no system libraries and no admin rights needed.
       icons.json                one flat list, one record per icon (the only file anyone edits)
       <Name>.svg                the icons, referenced by each record's `file`
 
-Each record: `id, file, status, style, category, description, description_ar, tags, tags_ar,
+Each record: `id, file, status, style, family, category, description, description_ar, tags, tags_ar,
 preferred_for, avoid_for, contexts, metaphor_strength, pairs_with, rtl_flip, source, license`.
-The concept map (concept -> house pick + alternates) is built at load time from `preferred_for`.
-Field rules are in `app/library-maintenance.md`.
+The concept map (concept -> house pick + alternates) is built at load time from `preferred_for`; lookups
+allow for plurals and UK spelling ("organisations"). Claude doesn't use it (it picks from its own knowledge);
+it drives keyword matching when there is no API key. Field rules are in `app/library-maintenance.md`.
+
+**Icon families** (`family`): the library holds two visual families, `simple` (bold, minimal glyphs: the house
+set) and `detailed` (finer line icons with more elements). They read as two design hands, so a slide's set of
+icons never mixes them.
 
 ## Icon colors (app/colors.py)
 
@@ -59,7 +93,8 @@ Text inside groups counts. **Empty icon holders** (two or more alike circles, ri
 with nothing in them) are found and paired with their label (the text on the panel they sit in, else the
 nearest text in line); the icon goes centered in the holder, at 60% of its inner circle.
 
-Each slide gets icons on one set: its **main component** (icon holders, diagram nodes and tiles, then short
+Each slide gets icons on one set: its **main component** (PL placeholders, which then take the slide on their
+own, then icon holders, diagram nodes and tiles, then short
 headings, then longer text, then lists). If that can't take icons, its next set of headings or labels may;
 longer text and bullets never stand in. Icons sit right next to the text itself (its real lines, alignment and
 anchor, rotation included): in a node, above the label inside it; for plain headings, beside the text, clear of
@@ -71,24 +106,37 @@ single-message slides) are added only when the deck already has one on such a sl
 on the slide are a family and are decided together, with one placement and size, and icons on all of them or
 none. The report names the slide that holds a family back.
 
-Concepts: Claude returns up to three ideas per item, best first, for each slide's candidate sets only (one call
-per ~60 items, whole slides together, titles and sets in the prompt). A set's icons are assigned together, so
-when two items' first ideas need the same icon on one slide, one falls back to its next idea. A set's icons only
-count as taken once it's placed.
+Icons: Claude picks **one icon per item** by meaning, from its own knowledge of visual metaphors (`SYSTEM` in
+`app/concepts.py`). It gets the icon library (each icon's name, family, what it draws, keywords and "not for"
+terms; no house picks) and the slides' candidate sets, each set as one slide entry of numbered points (a
+headline and a gist), and returns `{"choices":[{"slide", "point", "icon"}]}`. Its rules: exact library names,
+"" when nothing genuinely fits (but a reasonable metaphor beats ""), no icon twice on a slide, one family per
+slide, all or nothing per slide. One call per ~60 items, whole slides together; the library is cached after the
+first call.
+
+The code checks every set's choices against the rules it can verify (names in the library, no repeats, one
+family, all or nothing). Sets that break one go back to Claude **once**, with their earlier choices and the rule
+broken; a set that still breaks one is flagged with the reason. The selector then applies the hard rules (style,
+`avoid_for`, regional block list, an icon once per slide, all or none per set) and **same label, same icon**
+deck-wide: a recurring heading keeps the icon it got first, where its set still holds. A set's icons only count
+as taken once it's placed.
+
+Without a key, or when the API fails, keyword matching finds up to three ideas per item and the concept map and
+tags find their icons, with the same rules.
 
 ## Pipeline (app/pipeline.py)
 
 | Step | Module | Status |
 | --- | --- | --- |
 | 1. Read deck, existing icons, settings | `deck.py` | Rows of boxes = cards, multi-paragraph box = list, lone short box = hero |
-| 2. Up to three concepts per item | `concepts.py` | Claude API (candidate sets only), keyword fallback |
-| 3-4. Shortlist three, pick by rules | `selector.py` | Concept map first, style, avoid_for, regional blocklist, deck ledger, all-or-none sets |
+| 2. One icon per item | `concepts.py` | Claude picks from the icon library by meaning (candidate sets only), one retry for sets that break a rule; keyword fallback |
+| 3-4. Check by rules | `selector.py` | Style, avoid_for, regional blocklist, an icon once per slide, one family per set, same label same icon, all-or-none sets; concept map and tags for keyword matching |
 | 5. Place and insert | `placement.py`, `icon_tools.py` | SVG + PNG fallback, recolored, RTL flip only when `rtl_flip` |
 | 6. Report | `report.py` | Markdown + JSON |
 
 ## Main TODOs
 
-- Modes `replace` and `standardize` (`pipeline.py`)
+- Mode `standardize` (`pipeline.py`)
 - Parse `style-guide.md`; read existing icons' color and assign their sizes to tiers (`library.py`, `deck.py`)
 - Real line positions for list icons, safe-margin indent, centered cards (`placement.py`)
 - KPI tiles, grouped shapes, tables, inherited font sizes (`deck.py`)

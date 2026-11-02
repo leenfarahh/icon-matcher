@@ -19,17 +19,24 @@ you can judge the cases the rule doesn't name.
 | Rule | Standard |
 |---|---|
 | Style | One style per deck; match existing icons if present |
+| Family | One icon family per slide's set (simple or detailed) |
 | Weight | Stroke weight close to body text weight |
 | Size | Fixed tiers (card icon, list icon, hero icon) set per brand |
 | Color | Single brand color or text color; no multicolor |
 | Restraint | Skip icons where no clear metaphor exists; flag instead of forcing |
-| Consistency | Same concept = same icon, deck-wide |
+| Consistency | Same concept = same icon, deck-wide; never the same icon twice on a slide |
 | Regional | Avoid hand gestures, religious symbols, alcohol, pig imagery, and maps showing borders |
 
 ## 2. Choosing the icon
 
 An icon earns its place when a reader scanning the slide gets the item's idea
 from the icon before reading the words. Pick for that.
+
+With an API key, Claude picks one icon per item by meaning, from its own
+knowledge of visual metaphors and what each icon draws; it doesn't get the
+house picks. A wrong icon is worse than none, but a reasonable visual metaphor
+beats none. The order below is for keyword matching (no API key) and for
+designers choosing by hand.
 
 **Order of preference among the shortlist:**
 
@@ -58,6 +65,17 @@ gets a shield or checklist, not a gavel, unless the slide is about courts.
 "Board approval of the policy" is about governance or approval, not a board
 table.
 
+**Pick by what the icon draws, not by a shared word.** Tags carry words, and
+words have more than one sense: "manual processes" (by hand) is not a user
+manual, "corporate culture" is not the arts, and "operations" (a subject the
+approval tick is used in) is not what a tick shows. Read the description.
+`contexts` say where an icon suits; they never make it fit an idea on their
+own.
+
+**Name the idea specifically.** "Centralization" and "delayering" are different
+ideas; calling both "organization" gives two different cards one icon. Use
+the umbrella word only when the items truly mean it.
+
 ## 3. Restraint: when to flag instead
 
 Flag the item, place nothing, and say why in the report when:
@@ -84,6 +102,13 @@ designer has to find and remove.
 reports `deck_icon_style`). If they are mixed, use the majority and report the
 others as inconsistent. With no icons, use the library's main style. Never mix
 outline and filled in one deck: they read as two design hands.
+
+**Family.** Within one style the library has two visual families (`family` in
+`icons.json`): `simple`, bold minimal glyphs (the house set), and `detailed`,
+finer line drawings with more elements. Side by side they read as two design
+hands, just as outline and filled do, so a slide's set never mixes them: pick
+the family that has a genuine icon for every item first, then every icon from
+it.
 
 **Weight.** Outline icons should look about as heavy as the body text beside
 them. The library is normalized to one stroke weight per style, so the weight
@@ -122,6 +147,13 @@ ask for a brand tier rather than using a one-off size inside a set.
 
 **Placement:**
 
+- **PL logo placeholders first.** Where the designer dropped the PL logo, the
+  icon replaces it: same spot, same group and layer, centered in its frame at
+  the largest size that keeps the icon's proportions. The designer chose that
+  spot, so nothing else on the slide gets an icon and no tier applies. The icon
+  stands for the placeholder's label (its panel's heading, else the nearest
+  text in line; never a KPI value) and takes the placeholder's theme color when
+  it has the contrast.
 - **Cards and columns (`above`)**: the icon sits above the heading, one gap
   above the first line, aligned with the heading's start (left in English,
   right in Arabic, centered if the heading is centered). Every card in the
@@ -140,12 +172,13 @@ ask for a brand tier rather than using a one-off size inside a set.
 ## 6. Consistency across the deck
 
 - Same concept = same icon on every slide. "Security" on slide 3 and slide 11
-  gets the same shield.
-- One icon never means two things on the same slide.
+  gets the same shield. The same label (a recurring heading) keeps its icon too.
+- Never use the same icon twice on one slide, even for items whose ideas are
+  close.
 - Across the deck, avoid reusing one icon for different concepts where the
   library offers a distinct fitting icon; readers learn icon meanings as they
   go.
-- Icons in a set share one tier, one placement, one alignment.
+- Icons in a set share one tier, one placement, one alignment and one family.
 - When adding to a deck that already has our icons (`library_id` in the
   inspection), reuse their concept-to-icon choices.
 
