@@ -44,6 +44,7 @@ class Item:
     concept: Optional[str] = None
     concepts: list[str] = field(default_factory=list)   # Claude's ideas for its icon, best first (concept = the one used)
     icon_pick: Optional[str] = None   # Claude's icon for it ("" = nothing fits); None = keyword matching instead
+    unsure: Optional[tuple] = None    # (icon, fit): Claude's pick when it rated the fit below ICON_MIN_FIT
     # Where the item's first line of text sits (inches, estimated), so an icon goes next to the text itself.
     # None: not measured (fall back to the box's edges).
     tx_left: Optional[float] = None

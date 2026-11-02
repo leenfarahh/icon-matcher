@@ -342,17 +342,14 @@ def holders(slide, theme, slide_h) -> list[list[dict]]:
     texts = [s for s in others if s.has_text_frame and s.text_frame.text.strip() and not _not_an_item(s, slide_h)]
     slide_area = slide.part.package.presentation_part.presentation.slide_width / EMU * slide_h
 
-    def overlaps(a, b):
-        return min(a[2], b[2]) - max(a[0], b[0]) > 0.03 and min(a[3], b[3]) - max(a[1], b[1]) > 0.03
-
-    rows = {s.shape_id: text_layout(s, colors.is_drawn(s, colors.shape_fill(theme, s)))[0]["rows"] for s in texts}
+    rows ={s.shape_id: text_layout(s, colors.is_drawn(s, colors.shape_fill(theme, s)))[0]["rows"] for s in texts}
 
     def empty(f):   # nothing on it: no text over it (a panel's text elsewhere is fine), no picture or shape within it
         l, t, r, b = f["box"]
         for s in others:
             sl, st, sr, sb = _inches(s)
             within = (sr - sl) * (sb - st) < (r - l) * (b - t) and l <= (sl + sr) / 2 <= r and t <= (st + sb) / 2 <= b
-            if within or any(overlaps(row, f["box"]) for row in rows.get(s.shape_id, ())):
+            if within or any(_overlaps(row, f["box"]) for row in rows.get(s.shape_id, ())):
                 return False
         return True
 
@@ -376,7 +373,8 @@ def holders(slide, theme, slide_h) -> list[list[dict]]:
     out = []
     for g in (g for g in groups if len(g) >= 2):
         for f in g:
-            f["label"], f["seat"] = _label_for(f["box"], others, texts, theme, slide_area), seat(f)
+            siblings = [o["box"] for o in g if o is not f]
+            f["label"], f["seat"] = _label_for(f["box"], others, texts, theme, slide_area, siblings), seat(f)
         labels = [f["label"].shape_id for f in g if f["label"] is not None]
         if len(labels) == len(g) == len(set(labels)):
             out.append(sorted(g, key=lambda f: (round(_inches(f["label"])[1], 1), _inches(f["label"])[0])))
@@ -392,10 +390,39 @@ def _value_only(text: str) -> bool:
     return not [w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in UNITS]
 
 
-def _label_candidates(box, others, texts, theme, slide_area) -> list[tuple]:
+def _stat(text: str) -> bool:
+    """A figure with a word or two ("2% - 4% savings", "AED 2.4bn revenue"): it labels an icon spot only when no
+    other text is in reach, since it usually heads a column of the slide rather than naming one icon."""
+    words = [w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in UNITS]
+    figure = re.search(r"\d\s*%|\d\s*[-–]\s*\d|\d(\.\d+)?\s*(bn|mn|k)\b", text.lower())
+    return bool(figure) and len(words) <= 2
+
+
+def _overlaps(a, b) -> bool:
+    return min(a[2], b[2]) - max(a[0], b[0]) > 0.03 and min(a[3], b[3]) - max(a[1], b[1]) > 0.03
+
+
+def _in_line(text_box, spot) -> tuple[str, float] | None:
+    """Where a text sits in line with an icon spot, within reach: (the side it is on, the gap in inches), or None."""
+    sl, st, sr, sb = text_box
+    l, t, r, b = spot
+    if min(r, sr) - max(l, sl) > 0:          # in its column: above or below it
+        side, gap = ("below", st - b) if st - b >= t - sb else ("above", t - sb)
+    elif min(b, sb) - max(t, st) > 0:        # in its row: beside it
+        side, gap = ("right", sl - r) if sl - r >= l - sr else ("left", l - sr)
+    else:
+        return None
+    return (side, gap) if -0.05 <= gap <= HOLDER_REACH_IN else None
+
+
+def _label_candidates(box, others, texts, theme, slide_area, siblings=()) -> list[tuple]:
     """The texts an icon spot (a holder or placeholder) may stand for, best first, as (gap in inches, shape):
-    the heading of the panel it sits in (its topmost text), then the texts in line with it (above, below or
-    beside), nearest first. KPI values are never labels: in a tile, the icon stands for the description."""
+    the heading of the panel it sits in (its topmost text), then a text frame it sits in with its lines clear of
+    it (a card drawn as one text box), then the texts in line with it (above, below or beside), nearest first.
+    KPI values are never labels: in a tile, the icon stands for the description; a figure with a word or two comes
+    after every other text in reach. A text on the same side of another spot of the set (`siblings`: their boxes)
+    heads the set and labels none of them: a subtitle across a row of cards sits above every icon, often closer
+    than each card's own heading."""
     l, t, r, b = box
     cx, cy = (l + r) / 2, (t + b) / 2
     texts = [s for s in texts if not _value_only(s.text_frame.text)]
@@ -404,31 +431,38 @@ def _label_candidates(box, others, texts, theme, slide_area) -> list[tuple]:
         sl, st, sr, sb = _inches(s)
         return (sl + sr) / 2, (st + sb) / 2
 
-    out = []
+    def holds(frame, spot):
+        return frame[0] <= (spot[0] + spot[2]) / 2 <= frame[2] and frame[1] <= (spot[1] + spot[3]) / 2 <= frame[3]
+
+    out = []   # its panel: its own, not one under the whole set (a column of rows on one colored band)
     panels = [(s, _inches(s)) for s in others if colors.is_drawn(s, colors.shape_fill(theme, s))]
     panels = [(pl, pt, pr, pb) for s, (pl, pt, pr, pb) in panels if pl <= cx <= pr and pt <= cy <= pb
               and 2 * (r - l) * (b - t) <= (pr - pl) * (pb - pt) <= HOLDER_PANEL_SHARE * slide_area]
     if panels:
-        pl, pt, pr, pb = min(panels, key=lambda e: (e[2] - e[0]) * (e[3] - e[1]))
+        pl, pt, pr, pb = panel = min(panels, key=lambda e: (e[2] - e[0]) * (e[3] - e[1]))
         on = [s for s in texts if pl <= center(s)[0] <= pr and pt <= center(s)[1] <= pb]
-        if on:
+        if on and not any(holds(panel, o) for o in siblings):
             out.append((-1.0, min(on, key=lambda s: (_inches(s)[1], len(s.text_frame.text.split())))))
+
+    for s in texts:   # the text frame it sits in, its own and no other spot's, with no line of text over it
+        sl, st, sr, sb = frame = _inches(s)
+        if holds(frame, box) and not any(holds(frame, o) for o in siblings) and all(s is not o for _, o in out) \
+                and (sr - sl) * (sb - st) <= HOLDER_PANEL_SHARE * slide_area and not any(
+                    _overlaps(row, box) for row in text_layout(s, colors.is_drawn(s, colors.shape_fill(theme, s)))[0]["rows"]):
+            out.append((-0.5, s))
     for s in texts:
-        sl, st, sr, sb = _inches(s)
-        if min(r, sr) - max(l, sl) > 0:          # in its column: above or below it
-            gap = max(st - b, t - sb)
-        elif min(b, sb) - max(t, st) > 0:        # in its row: beside it
-            gap = max(sl - r, l - sr)
-        else:
+        here = _in_line(_inches(s), box)
+        if here is None or any(s is o for _, o in out):
             continue
-        if -0.05 <= gap <= HOLDER_REACH_IN and all(s is not o for _, o in out):
-            out.append((gap, s))
+        if any((there := _in_line(_inches(s), o)) and there[0] == here[0] for o in siblings):
+            continue
+        out.append((here[1] + (HOLDER_REACH_IN if _stat(s.text_frame.text) else 0), s))
     return sorted(out, key=lambda e: e[0])
 
 
-def _label_for(box, others, texts, theme, slide_area):
+def _label_for(box, others, texts, theme, slide_area, siblings=()):
     """The text an icon spot stands for (its best label candidate), or None."""
-    found = _label_candidates(box, others, texts, theme, slide_area)
+    found = _label_candidates(box, others, texts, theme, slide_area, siblings)
     return found[0][1] if found else None
 
 
@@ -444,15 +478,18 @@ def pl_placeholders(slide, theme, slide_h, refs) -> tuple[list[dict], str]:
     others = [s for s in colors.leaves(slide.shapes) if s.shape_id not in ids]
     texts = [s for s in others if s.has_text_frame and s.text_frame.text.strip() and not _not_an_item(s, slide_h)]
     slide_area = slide.part.package.presentation_part.presentation.slide_width / EMU * slide_h
+    siblings = [[g["box"] for g in found if g is not f] for f in found]
     pairs = sorted(((gap, k, s) for k, f in enumerate(found)
-                    for gap, s in _label_candidates(f["box"], others, texts, theme, slide_area)), key=lambda e: e[:2])
+                    for gap, s in _label_candidates(f["box"], others, texts, theme, slide_area, siblings[k])),
+                   key=lambda e: e[:2])
     taken = set()
     for gap, k, s in pairs:
         if "label" not in found[k] and s.shape_id not in taken:
             found[k]["label"] = s
             taken.add(s.shape_id)
     if any("label" not in f for f in found):
-        near = any(_label_candidates(f["box"], others, texts, theme, slide_area) for f in found if "label" not in f)
+        near = any(_label_candidates(f["box"], others, texts, theme, slide_area, siblings[k])
+                   for k, f in enumerate(found) if "label" not in f)
         return [], ("has no text of its own nearby (the texts near it label other placeholders)" if near
                     else "has no text beside it or on its panel")
     for f in found:

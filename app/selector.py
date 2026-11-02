@@ -15,6 +15,11 @@ def label(item: Item) -> str:
     return " ".join(re.findall(r"[^\W\d_]+", item.text.lower())) or " ".join(item.text.lower().split())
 
 
+def _unsure(item: Item) -> str:
+    icon, fit = item.unsure
+    return f"Claude wasn't sure enough: its best icon, {icon}, fits {fit:g} of 5, below the bar of {config.MIN_FIT}"
+
+
 class Selector:
     def __init__(self, library, settings: DeckSettings):
         self.lib = library
@@ -155,11 +160,12 @@ class Selector:
 
     def _why_not(self, members: list[Item], choices: list[list[tuple]]) -> tuple[Item | None, str]:
         """The item that blocks the set (None when it is the set as a whole), and why."""
+        unsure = next((m for m in members if m.unsure), None)
         if len(members) > 1 and all(m.icon_pick == "" for m in members):
-            return None, "Claude found no icon that genuinely fits every item (a wrong icon is worse than none)"
+            return (unsure, _unsure(unsure)) if unsure else                 (None, "Claude found no icon that genuinely fits every item (a wrong icon is worse than none)")
         for m, opts in zip(members, choices):
             if m.icon_pick == "":
-                return m, "Claude found no icon that genuinely fits"
+                return m, _unsure(m) if m.unsure else "Claude found no icon that genuinely fits"
             if m.icon_pick and not opts:
                 icon = self.lib.get(m.icon_pick)
                 why = ("it is already on this slide" if (m.slide, m.icon_pick) in self.on_slide else
@@ -201,9 +207,11 @@ class Selector:
         if best is None:
             culprit, reason = self._why_not(members, choices)
             if len(members) == 1:
-                return [], [Flag(members[0], reason, [o[2].id for o in choices[0][:3]])]
+                return [], [Flag(members[0], reason, [o[2].id for o in choices[0][:3]]
+                                 or ([members[0].unsure[0]] if members[0].unsure else []))]
             where = f" on '{' '.join(culprit.text.split())[:40]}'" if culprit else ""
-            return [], [Flag(m, f"set left without icons: {reason}{where}", [o[2].id for o in opts[:3]])
+            return [], [Flag(m, f"set left without icons: {reason}{where}",
+                             [o[2].id for o in opts[:3]] or ([m.unsure[0]] if m.unsure else []))
                         for m, opts in zip(members, choices)]
         picks = []
         for m, opts, (_, c, icon, why, alts, said) in zip(members, choices, best):

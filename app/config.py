@@ -11,6 +11,9 @@ WORK_DIR = Path(os.getenv("ICON_WORK_DIR", "./jobs"))
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 # How much Claude thinks before it picks: low | medium | high | xhigh | max. Higher costs more and takes longer.
 ANTHROPIC_EFFORT = os.getenv("ANTHROPIC_EFFORT", "low")
+# How sure Claude must be of an icon to place it: it rates each pick's fit from 1 (a stretch) to 5 (the icon nearly
+# anyone would expect); 3 is a reasonable visual metaphor. Below this, the set is left for a designer to choose.
+MIN_FIT = int(os.getenv("ICON_MIN_FIT", "3"))
 USE_LLM = bool(os.getenv("ANTHROPIC_API_KEY"))  # falls back to keyword matching without a key
 
 # Claude connector (connector.py): the address Claude reaches it at (on Render, the service's own address unless set),

@@ -274,11 +274,11 @@ class FakeClaude:
     """Stands in for anthropic.Anthropic(): picks one icon (by default the same one) for every point it is sent;
     asked for the closest icons (a second system block), lists options(text) for each point."""
     def __init__(self, icon="finance-growth-chart", fail=None, max_items=None, thinking=False, text=None, options=None,
-                 refuse=False):
+                 refuse=False, fit=None):
         self.beta = self.messages = self
         self.calls, self.systems, self.sent = 0, [], {}
         self.icon, self.fail, self.max_items, self.thinking, self.text = icon, fail, max_items, thinking, text
-        self.options, self.refuse = options, refuse
+        self.options, self.refuse, self.fit = options, refuse, fit   # fit(text): how sure, 1-5 (None: not given)
 
     def create(self, **kw):
         from types import SimpleNamespace as NS
@@ -296,7 +296,8 @@ class FakeClaude:
             near = self.options or (lambda text: [icon(text)])
             data = {"options": [{"slide": s, "point": p, "icons": near(t)} for s, p, t in points]}
         else:
-            data = {"choices": [{"slide": s, "point": p, "icon": icon(t)} for s, p, t in points]}
+            data = {"choices": [{"slide": s, "point": p, "icon": icon(t), **({"fit": self.fit(t)} if self.fit else {})}
+                                for s, p, t in points]}
         text = self.text if self.text is not None else "Choices:\n" + json.dumps(data)
         blocks = [NS(type="thinking", thinking="")] if self.thinking else []
         return NS(stop_reason="end_turn", content=blocks + [NS(type="text", text=text)])
@@ -1510,3 +1511,108 @@ def test_a_placeholder_without_its_own_label_leaves_the_slide_as_it_is(tmp_path)
     r = pipeline.run(tmp_path / "d.pptx", lib, "replace")
     assert r.picks == [] and r.gaps == ["Slide 1: a PL placeholder has no text beside it or on its panel, so this "
                                         "slide's placeholders were left as they are"]
+
+
+# --- which text a placeholder stands for, on layouts from a real deck -------------------------------------------
+
+HEADS = ["PROVEN TRACK RECORD", "DEEP SHARED SERVICES", "PROPRIETARY ACCELERATORS", "DEEP EXPERTISE IN PAYMENTS"]
+
+
+def placeholder_labels(draw) -> list[str]:
+    """Each PL placeholder's label (its first line), top to bottom and left to right."""
+    from app import deck
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    draw(prs.slides.add_slide(prs.slide_layouts[6]).shapes)
+    found = sorted((i for i in deck.read_items(prs) if i.placeholder),
+                   key=lambda i: (round(i.placeholder["box"][1], 1), i.placeholder["box"][0]))
+    return [i.text.splitlines()[0] for i in found]
+
+
+def text(shapes, x, y, w, h, *lines):
+    box = shapes.add_textbox(Inches(x), Inches(y), Inches(w), Inches(h))
+    box.text_frame.text = lines[0]
+    for line in lines[1:]:
+        box.text_frame.add_paragraph().text = line
+    return box
+
+
+def cards_under_a_subtitle(nearer):
+    """Four cards with a PL placeholder above each, and the slide's subtitle across the row: it sits about as close
+    to the icons as the cards' own headings, a little nearer to placeholder `nearer`."""
+    def draw(shapes):
+        text(shapes, 0.48, 1.40, 12.37, 0.35, "What We Bring To This Project")
+        for k, head in enumerate(HEADS):
+            pl_logo(shapes, 1.63 + 3.13 * k, 2.15 - (0.03 if k == nearer else 0), 0.65, name="PL logo")
+            text(shapes, 0.48 + 3.14 * k, 3.17, 2.94, 3.29, head, "What the card says about it, in a sentence.")
+    return draw
+
+
+def cards_drawn_as_text_boxes(shapes):
+    """Each card one tall text box with its heading at the top and its placeholder lower down inside it."""
+    for k, head in enumerate(HEADS):
+        text(shapes, 3.78 + 1.08 * k, 3.53, 0.95, 1.80, head)
+        pl_logo(shapes, 4.17 + 1.08 * k, 4.73, 0.34, name="PL logo")
+
+
+def rows_on_one_band(shapes):
+    """A colored band down the left with five row labels, a placeholder at the end of each, the rows' detail to the
+    right (the top row's a little nearer than its label)."""
+    from pptx.enum.dml import MSO_THEME_COLOR
+    from pptx.enum.shapes import MSO_SHAPE
+    band = shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.45), Inches(1.75), Inches(3.25), Inches(5.4))
+    band.fill.solid()
+    band.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_2
+    for k, head in enumerate(["FINANCIAL OPERATIONS", "FINANCE AND ACCOUNTING", "HR", "IT", "PROCUREMENT"]):
+        text(shapes, 0.5, 2.0 + 0.95 * k, 2.3, 0.6, head)
+        pl_logo(shapes, 2.95, 2.0 + 0.95 * k, 0.65, name="PL logo")
+    text(shapes, 4.05, 1.9, 3.3, 0.9, "Transaction Processing: authorization, clearing")
+
+
+def label_above_and_a_figure_below(shapes):
+    text(shapes, 3.89, 3.60, 0.69, 0.61, "Traditional spend and vendor management")
+    pl_logo(shapes, 4.09, 4.72, 0.31, name="PL logo")
+    text(shapes, 3.78, 5.48, 0.96, 0.18, "2% - 4% savings")
+
+
+@pytest.mark.parametrize("draw, expected", [
+    (cards_under_a_subtitle(0), HEADS),
+    (cards_under_a_subtitle(3), HEADS),     # the same slide again, as a highlight copy: the same labels
+    (cards_drawn_as_text_boxes, HEADS),
+    (rows_on_one_band, ["FINANCIAL OPERATIONS", "FINANCE AND ACCOUNTING", "HR", "IT", "PROCUREMENT"]),
+    (label_above_and_a_figure_below, ["Traditional spend and vendor management"]),
+], ids=["subtitle-nearer-the-first", "subtitle-nearer-the-last", "cards-as-text-boxes", "rows-on-a-band",
+        "figure-below"])
+def test_each_placeholder_stands_for_its_own_text(draw, expected):
+    """A text over the whole set (a subtitle across the row, the band under every row) heads the set and labels
+    none of its placeholders; a card drawn as a text box labels the placeholder inside it; a figure with a word
+    ("2% - 4% savings") labels one only when nothing else is near."""
+    assert placeholder_labels(draw) == expected
+
+
+def test_icons_claude_isnt_sure_of_are_left_for_a_designer(tmp_path, monkeypatch):
+    """Claude rates each pick's fit (1-5); below ICON_MIN_FIT (3: a reasonable metaphor) the set gets no icon, and
+    the flag says why and offers Claude's pick first."""
+    from app import concepts, selector
+    lib = make_library(tmp_path / "lib")
+    picks = {"Revenue growth": "finance-growth-chart", "Team expansion": "people-team", "Risk management": "risk-shield"}
+    sure = {"Revenue growth": 5, "Team expansion": 2, "Risk management": 3}
+    items = [pick_item(1, k, t, None, "row") for k, t in enumerate(picks)] + [pick_item(2, 9, "Risk management", None)]
+    for i in items:
+        i.icon_pick = None
+    fake = FakeClaude(icon=lambda t: picks[t], fit=lambda t: sure[t])
+    notes = concepts._extract_llm(items, lib, "outline", client=fake)
+    assert notes == ["Claude wasn't sure enough of 1 icons (fit below 3 of 5, ICON_MIN_FIT): their sets were left "
+                     "for a designer, Claude's pick offered first"]
+    assert [i.icon_pick for i in items] == ["finance-growth-chart", "", "risk-shield", "risk-shield"]
+    assert items[1].unsure == ("people-team", 2)
+    got, flags = selector.Selector(lib, tier_settings()).pick_all(items)
+    assert [p.icon.id for p in got] == ["risk-shield"]                  # slide 2's set; slide 1's waits as a whole
+    assert len(flags) == 3 and "wasn't sure enough: its best icon, people-team, fits 2 of 5" in flags[1].reason
+    assert flags[1].options == ["people-team"]
+
+    monkeypatch.setattr(config, "MIN_FIT", 2)                          # a lower bar takes it
+    items = [pick_item(1, k, t, None, "row") for k, t in enumerate(picks)]
+    concepts._extract_llm(items, lib, "outline", client=FakeClaude(icon=lambda t: picks[t], fit=lambda t: sure[t]))
+    assert all(i.icon_pick for i in items)
+    assert '"fit":<1 to 5>' in concepts.system_prompt(lib, "outline")

@@ -116,7 +116,7 @@ def _offer(flags: list[Flag], picks: list[Pick], library: Library, settings, prs
     stand_ins = []
     for f, near in zip(open_flags, found):
         text = f.item.text.lower()
-        usable = [i for i in dict.fromkeys([*f.options, f.item.icon_pick or "", *near])
+        usable = [i for i in dict.fromkeys([(f.item.unsure or ("",))[0], *f.options, f.item.icon_pick or "", *near])
                   if (icon := library.get(i)) and icon.style == settings.style
                   and not any(a.lower() in text for a in icon.avoid_for)]
         f.options = sorted(usable, key=lambda i: (f.item.slide, i) in on_slide)[:concepts.OPTIONS]

@@ -28,8 +28,11 @@ How to choose, in this order
    the point at a glance, judged by what it draws, not by a shared word. "Cyber resilience" is a shield or a
    lock. "Always-on coordination" can be a headset, phone, clock or people icon. "Extension option" can be
    arrows, refresh or settings. "Manual processes" are work done by hand, not a user manual.
-2. Nothing fits. If no icon gives a genuine match, return "". A wrong icon is worse than no icon. Do not be
-   timid either: a reasonable visual metaphor beats "".
+2. How sure you are. Give every icon a "fit" from 1 to 5: how surely a reader would connect it with the point
+   at a glance, judged by what it draws. 5: the icon nearly anyone would expect. 4: a clear match. 3: a reasonable
+   visual metaphor. 2: loose or generic. 1: a stretch. Rate honestly: icons below a reasonable metaphor are left
+   for a designer to choose, with yours offered first, which beats a weak icon on a client slide. If no icon gives
+   a genuine match at all, return "".
 
 Rules
 3. Every icon you return must appear in the ICON LIBRARY, copied exactly as written. Never invent, shorten,
@@ -43,7 +46,7 @@ Rules
 8. Return JSON only, in the output format below. No commentary.
 
 Output format:
-{{"choices":[{{"slide":<slide number>,"point":<point number>,"icon":"<library name or empty>"}}]}}
+{{"choices":[{{"slide":<slide number>,"point":<point number>,"icon":"<library name or empty>","fit":<1 to 5>}}]}}
 
 ICON LIBRARY
 {library}"""
@@ -117,11 +120,12 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
     system = [{"type": "text", "text": system_prompt(library, style),
                "cache_control": {"type": "ephemeral"}}]  # same for every batch: cached after the first
     known = {i.id: i.family for i in _pickable(library, style)}   # what Claude may name -> its family
-    invented = []
+    invented, unsure = [], []
 
     def run(batch):
+        fits = {}
         try:
-            data = _label(client, system, batch)
+            data = _label(client, system, batch, fits=fits)
         except (anthropic.APIError, ValueError) as e:
             return (batch, *_failure(e))
         notes = {}
@@ -134,13 +138,17 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
         if notes:
             try:
                 data.update(_label(client, system, [i for g in _groups(batch) if _key(g[0]) in notes for i in g],
-                                   notes))
+                                   notes, fits=fits))
             except (anthropic.APIError, ValueError):
                 pass   # keep the first answer: the selector flags the sets that still break a rule
         for i in batch:
-            pick = data.get(_key(i), "")
+            pick, fit = data.get(_key(i), ""), fits.get(_key(i))
             if pick and pick not in known:   # rule 3: a name not in the library counts as no icon
                 invented.append(pick)
+                pick = ""
+            if pick and fit is not None and fit < config.MIN_FIT:   # not sure enough: a designer chooses instead
+                i.unsure = (pick, fit)
+                unsure.append(pick)
                 pick = ""
             i.icon_pick, i.concept, i.concepts = pick, pick or None, [pick] if pick else []
         return None
@@ -157,6 +165,9 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
     if invented:
         notes.append(f"Claude named {len(invented)} icons that aren't in the library "
                      f"({', '.join(sorted(set(invented))[:5])}); those items got no icon")
+    if unsure:
+        notes.append(f"Claude wasn't sure enough of {len(unsure)} icons (fit below {config.MIN_FIT} of 5, "
+                     "ICON_MIN_FIT): their sets were left for a designer, Claude's pick offered first")
     failed = [r for r in results if r]
     if not failed:
         return notes
@@ -228,9 +239,10 @@ def _describe(groups, notes=None) -> str:
     return "\n".join(lines)
 
 
-def _label(client, system, batch, notes=None, many=False) -> dict:
+def _label(client, system, batch, notes=None, many=False, fits=None) -> dict:
     """One request for a batch -> {item key: icon name or ""}; with many (the CLOSEST task), {item key: icon
-    names, best first}. A reply cut off at MAX_TOKENS is retried as two halves, split between sets where it can be."""
+    names, best first}. `fits` collects the fit Claude gave each pick (1-5). A reply cut off at MAX_TOKENS is
+    retried as two halves, split between sets where it can be."""
     groups = _groups(batch)
     msg = client.beta.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
                                       output_config={"effort": config.ANTHROPIC_EFFORT},
@@ -243,7 +255,8 @@ def _label(client, system, batch, notes=None, many=False) -> dict:
     if msg.stop_reason == "max_tokens" and len(batch) > 1:
         ends = [sum(len(g) for g in groups[:k]) for k in range(1, len(groups))] or [len(batch) // 2]
         half = min(ends, key=lambda e: abs(e - len(batch) / 2))
-        return {**_label(client, system, batch[:half], notes, many), **_label(client, system, batch[half:], notes, many)}
+        return {**_label(client, system, batch[:half], notes, many, fits),
+                **_label(client, system, batch[half:], notes, many, fits)}
     text = "".join(b.text for b in msg.content if b.type == "text")  # skips thinking blocks on newer models
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
@@ -263,6 +276,9 @@ def _label(client, system, batch, notes=None, many=False) -> dict:
             got = c.get(field) if isinstance(c.get(field), list) else [c.get(field)]
             names = [g.split("|")[0].strip() for g in got if isinstance(g, str)]
             picks[_key(item)] = names if many else (names[0] if names else "")
+            fit = c.get("fit")
+            if fits is not None and isinstance(fit, (int, float)) and not isinstance(fit, bool):
+                fits[_key(item)] = fit
     return picks
 
 
