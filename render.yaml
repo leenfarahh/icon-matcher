@@ -1,0 +1,32 @@
+# Render blueprint for the Claude connector (app/connector.py). Setup, Entra ID and the custom domain:
+# app/connector-setup.md. Only the connector runs here: the test UI (app.main) has no sign-in and is never deployed.
+services:
+  - type: web
+    name: prezlab-icons
+    runtime: python
+    plan: starter           # paid: free instances have no disk and sleep when idle, which loses runs in progress
+    region: frankfurt       # where uploaded client decks are processed and kept (up to ICON_RUN_TTL_HOURS)
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    # No access log: run links carry their private token in the path.
+    startCommand: uvicorn app.connector:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*' --no-access-log
+    healthCheckPath: /health
+    disk:                   # one instance with a disk: runs live on it and are processed in this instance
+      name: runs
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: ICON_LIBRARY_DIR
+        value: ./icons
+      - key: ICON_WORK_DIR
+        value: /var/data/runs
+      - key: ICON_PUBLIC_URL      # the custom domain, e.g. https://icons.prezlab.com (no trailing slash)
+        sync: false
+      - key: ENTRA_TENANT_ID
+        sync: false
+      - key: ENTRA_CLIENT_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY    # Claude picks the icons; without it, keyword matching (rougher picks)
+        sync: false

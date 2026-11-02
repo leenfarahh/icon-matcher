@@ -65,7 +65,8 @@ Return JSON only, in this format:
 {{"options":[{{"slide":<slide number>,"point":<point number>,"icons":["<library name>", ...]}}]}}"""
 
 BATCH = 60          # items per request (whole slides kept together): each JSON reply stays far below MAX_TOKENS
-MAX_TOKENS = 4096
+MAX_TOKENS = 16000  # the reply and Claude's thinking before it
+FALLBACK_BETA = "server-side-fallback-2026-07-01"   # a declined request is retried on the model Anthropic picks
 WORKERS = 4         # batches sent at the same time
 OPTIONS = 4         # closest icons offered for a flagged placeholder
 CLOSEST_BATCH = 15  # items per CLOSEST request: longer replies, so smaller batches sent side by side
@@ -231,8 +232,14 @@ def _label(client, system, batch, notes=None, many=False) -> dict:
     """One request for a batch -> {item key: icon name or ""}; with many (the CLOSEST task), {item key: icon
     names, best first}. A reply cut off at MAX_TOKENS is retried as two halves, split between sets where it can be."""
     groups = _groups(batch)
-    msg = client.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
-                                 messages=[{"role": "user", "content": _describe(groups, notes)}])
+    msg = client.beta.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
+                                      output_config={"effort": config.ANTHROPIC_EFFORT},
+                                      betas=[FALLBACK_BETA], fallbacks="default",
+                                      messages=[{"role": "user", "content": _describe(groups, notes)}])
+    if msg.stop_reason == "refusal":   # declined, and so was the fallback: the reply holds nothing to use
+        category = getattr(getattr(msg, "stop_details", None), "category", None)
+        raise Declined(f"it declined them under its {category.replace('_', ' ')} safeguards" if category
+                       else "it declined them")
     if msg.stop_reason == "max_tokens" and len(batch) > 1:
         ends = [sum(len(g) for g in groups[:k]) for k in range(1, len(groups))] or [len(batch) // 2]
         half = min(ends, key=lambda e: abs(e - len(batch) / 2))
@@ -259,9 +266,15 @@ def _label(client, system, batch, notes=None, many=False) -> dict:
     return picks
 
 
+class Declined(ValueError):
+    """Claude's safeguards declined a request (stop reason "refusal"); the message says why, for the report."""
+
+
 def _failure(e) -> tuple[str, bool]:
     """A readable reason, and whether it will fail for every batch (so the rest aren't sent)."""
     import anthropic
+    if isinstance(e, Declined):
+        return str(e), False
     if isinstance(e, anthropic.AuthenticationError):
         return "the API key was rejected: check ANTHROPIC_API_KEY in .env", True
     if isinstance(e, anthropic.PermissionDeniedError):

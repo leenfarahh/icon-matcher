@@ -1,6 +1,5 @@
 """HTTP API and test UI. Run from the project root: uvicorn app.main:app --reload, then open http://127.0.0.1:8000"""
 import hashlib
-import json
 import re
 import shutil
 import threading
@@ -12,7 +11,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import config, library_edit, pipeline, render, report
+from . import config, jobs, library_edit, render
 from .icon_tools import recolor_svg
 from .library import Library
 
@@ -109,16 +108,12 @@ async def create_job(deck: UploadFile = File(...), mode: str = Form("replace"), 
         shutil.copyfileobj(deck.file, f)
     slide_list = [int(s) for s in slides.split(",") if s.strip()] or None
     try:
-        r = pipeline.run(src, library, mode, slide_list)
+        result = jobs.run(job_dir, deck.filename, library, mode, slide_list)
     except (ValueError, NotImplementedError) as e:
         raise HTTPException(400, str(e))
-    result = report.to_dict(r)
-    # kept so chosen suggestions can be inserted later without running the deck (or Claude) again
-    (job_dir / SAVED_REPORT).write_text(json.dumps({"deck_file": deck.filename, **result}), encoding="utf-8")
     return {"job": job, **result}
 
 
-SAVED_REPORT = "report.json"
 JOB_ID = re.compile(r"[0-9a-f]{12}")
 
 
@@ -138,44 +133,11 @@ class ApplyRequest(BaseModel):
 def apply_suggestions(job: str, req: ApplyRequest):
     """Insert the chosen picks, and the icons chosen for flagged PL placeholders, into a copy of the deck. The
     copy holds exactly these icons."""
-    job_dir = _job_dir(job)
-    saved_path = job_dir / SAVED_REPORT
-    if not saved_path.exists():
-        raise HTTPException(404, "this run has no saved suggestions: run the deck again")
-    saved = json.loads(saved_path.read_text(encoding="utf-8"))
-    chosen = sorted(set(req.picks))
-    if not chosen and not req.choices:
-        raise HTTPException(400, "choose at least one icon")
-    if any(not 0 <= n < len(saved["picks"]) for n in chosen):
-        raise HTTPException(400, "unknown suggestion: run the deck again")
-    flags = saved.get("flags", [])
-    if any(not 0 <= n < len(flags) or not flags[n].get("spot") for n in req.choices):
-        raise HTTPException(400, "that placeholder can't take a chosen icon: run the deck again")
-    style = saved["settings"]["style"]   # an approved icon in the deck's style (options or a search), or an upload
-    for icon_id in req.choices.values():
-        upload = _upload_path(job_dir, icon_id)
-        if upload is None and (not (icon := library.get(icon_id)) or icon.style != style):
-            raise HTTPException(400, f"choose approved {style} icons from the library, or upload one")
-        if upload is not None and not upload.exists():
-            raise HTTPException(400, "an uploaded icon is missing: upload it again")
-    placements = pipeline.placements_from_report(saved, chosen, req.choices)
-    for p in placements:
-        if (upload := _upload_path(job_dir, p["icon_id"])) is not None:
-            p["svg_file"] = str(upload)
-    out, skipped = pipeline.insert(job_dir / saved["deck_file"], library, placements, saved["settings"])
-    shutil.rmtree(job_dir / PREVIEWS, ignore_errors=True)   # slide pictures now show the new copy
-    return {"added": len(placements) - len(skipped), "skipped": skipped, "output_file": out.name,
-            "download": f"jobs/{job}/download"}
-
-
-UPLOADS = "uploads"
-UPLOAD_ID = re.compile(r"upload:([0-9a-f]{12})")   # library ids are lowercase words and hyphens: never a colon
-
-
-def _upload_path(job_dir: Path, icon_id: str) -> Path | None:
-    """The file of an icon uploaded for this run, or None when icon_id names a library icon."""
-    m = UPLOAD_ID.fullmatch(icon_id)
-    return job_dir / UPLOADS / f"{m.group(1)}.svg" if m else None
+    try:
+        result = jobs.apply(_job_dir(job), library, req.picks, req.choices)
+    except jobs.RunError as e:
+        raise HTTPException(e.status, str(e))
+    return {**result, "download": f"jobs/{job}/download"}
 
 
 @app.post("/jobs/{job}/uploads")
@@ -187,20 +149,19 @@ async def upload_icon(job: str, file: UploadFile = File(...)):
     if errors:
         raise HTTPException(400, errors)
     digest = hashlib.sha1(svg).hexdigest()[:12]
-    (job_dir / UPLOADS).mkdir(exist_ok=True)
-    (job_dir / UPLOADS / f"{digest}.svg").write_bytes(svg)
+    (job_dir / jobs.UPLOADS).mkdir(exist_ok=True)
+    (job_dir / jobs.UPLOADS / f"{digest}.svg").write_bytes(svg)
     return {"id": f"upload:{digest}", "name": file.filename, "warnings": warnings, "source_format": source_format}
 
 
 @app.get("/jobs/{job}/uploads/{digest}.svg")
 def uploaded_svg(job: str, digest: str, color: str = ""):
-    path = _upload_path(_job_dir(job), f"upload:{digest}")
+    path = jobs.upload_path(_job_dir(job), f"upload:{digest}")
     if path is None or not path.exists():
         raise HTTPException(404, "no such upload")
     return _svg(path.read_bytes(), color)
 
 
-PREVIEWS = "previews"
 _rendering = threading.Lock()
 
 
@@ -210,20 +171,20 @@ def slide_picture(job: str, n: int):
     there is one), for the review screen. The first request renders all of them in one PowerPoint session;
     later ones come from the job's cache, which adding icons clears."""
     job_dir = _job_dir(job)
-    path = job_dir / PREVIEWS / f"slide-{n}.png"
+    path = job_dir / jobs.PREVIEWS / f"slide-{n}.png"
     if not path.exists():
-        saved = json.loads((job_dir / SAVED_REPORT).read_text(encoding="utf-8"))
+        saved = jobs.saved(job_dir)
         wanted = sorted({f["item"]["slide"] for f in saved.get("flags", []) if f.get("spot")})
         if n not in wanted:
             raise HTTPException(404, "no flagged placeholder on that slide")
         if not render.available():
             raise HTTPException(404, "slide pictures need PowerPoint on the machine running the tool")
         w, h = saved.get("slide_size") or (13.333, 7.5)
-        deck = next(iter(job_dir.glob("*_icons.pptx")), job_dir / saved["deck_file"])
+        deck = jobs.output(job_dir) or job_dir / saved["deck_file"]
         with _rendering:   # parallel requests: the first renders every slide, the rest find theirs done
             if not path.exists():
                 try:
-                    render.slides(deck, wanted, job_dir / PREVIEWS, w / h)
+                    render.slides(deck, wanted, job_dir / jobs.PREVIEWS, w / h)
                 except RuntimeError as e:
                     raise HTTPException(503, str(e))
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
@@ -231,10 +192,10 @@ def slide_picture(job: str, n: int):
 
 @app.get("/jobs/{job}/download")
 def download(job: str):
-    files = list(_job_dir(job).glob("*_icons.pptx"))
-    if not files:
+    out = jobs.output(_job_dir(job))
+    if out is None:
         raise HTTPException(404, "no output for this job")
-    return FileResponse(files[0], filename=files[0].name)
+    return FileResponse(out, filename=out.name)
 
-# TODO: auth (Microsoft 365 SSO), job cleanup, a small upload UI, and an Office add-in
-# front end that posts the open deck here and inserts the returned SVGs with Office.js.
+# Claude (chat and the PowerPoint add-in) reaches the same runs through the connector (connector.py), which has
+# sign-in and job cleanup. This test UI has neither: keep it on 127.0.0.1.

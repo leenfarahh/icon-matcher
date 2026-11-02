@@ -273,16 +273,20 @@ def sent_points(content):
 class FakeClaude:
     """Stands in for anthropic.Anthropic(): picks one icon (by default the same one) for every point it is sent;
     asked for the closest icons (a second system block), lists options(text) for each point."""
-    def __init__(self, icon="finance-growth-chart", fail=None, max_items=None, thinking=False, text=None, options=None):
-        self.messages, self.calls, self.systems = self, 0, []
+    def __init__(self, icon="finance-growth-chart", fail=None, max_items=None, thinking=False, text=None, options=None,
+                 refuse=False):
+        self.beta = self.messages = self
+        self.calls, self.systems, self.sent = 0, [], {}
         self.icon, self.fail, self.max_items, self.thinking, self.text = icon, fail, max_items, thinking, text
-        self.options = options
+        self.options, self.refuse = options, refuse
 
     def create(self, **kw):
         from types import SimpleNamespace as NS
-        self.calls += 1
+        self.calls, self.sent = self.calls + 1, kw
         if self.fail:
             raise self.fail
+        if self.refuse is not False:   # declined, fallback included; refuse names the category (or None)
+            return NS(stop_reason="refusal", stop_details=NS(category=self.refuse), content=[])
         points = sent_points(kw["messages"][0]["content"])
         if self.max_items and len(points) > self.max_items:   # reply cut off mid-JSON
             return NS(stop_reason="max_tokens", content=[NS(type="text", text='{"choices":[{"slide":0,"po')])
@@ -309,6 +313,9 @@ def test_llm_picks_for_large_decks_in_batches(tmp_path):
     items, fake = slide_items(130), FakeClaude(icon=" finance-growth-chart ")
     assert concepts._extract_llm(items, make_library(tmp_path / "lib"), "outline", client=fake) == []
     assert fake.calls == 3 and {i.icon_pick for i in items} == {"finance-growth-chart"}   # 60 + 60 + 10, trimmed
+    assert fake.sent["model"] == "claude-sonnet-5-5" and fake.sent["output_config"] == {"effort": "low"}
+    assert fake.sent["fallbacks"] == "default" and fake.sent["betas"] == ["server-side-fallback-2026-07-01"]
+    assert "temperature" not in fake.sent and "thinking" not in fake.sent       # adaptive thinking, the default
 
 
 @pytest.mark.parametrize("fake", [FakeClaude(max_items=20), FakeClaude(thinking=True)])
@@ -329,6 +336,8 @@ def test_api_failures_fall_back_to_keywords_with_a_note(tmp_path):
         (FakeClaude(fail=anthropic.AuthenticationError("bad key", response=httpx2.Response(401, request=request),
                                                        body=None)), "API key was rejected", 1),
         (FakeClaude(text="Sorry, I can't help with that."), "unreadable reply", 3),
+        (FakeClaude(refuse="general_harms"), "it declined them under its general harms safeguards", 3),
+        (FakeClaude(refuse=None), "(it declined them)", 3),
     ]
     lib = make_library(tmp_path / "lib")
     for fake, reason, calls in cases:
@@ -1119,7 +1128,8 @@ def test_sets_that_break_a_rule_go_back_to_claude_once(tmp_path):
 
     class Claude:
         def __init__(self):
-            self.messages, self.sent = self, []
+            self.beta = self.messages = self
+            self.sent = []
 
         def create(self, **kw):
             content = kw["messages"][0]["content"]

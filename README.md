@@ -10,11 +10,23 @@ Mirrors the `prezlab-icon-placement` skill.
     copy .env.example .env                 # then paste your ANTHROPIC_API_KEY into .env (optional)
     python -m app.cli deck.pptx            # --mode replace (default), suggest or add
     uvicorn app.main:app --reload          # POST /jobs (deck, mode, slides), GET /jobs/{id}/download
+    uvicorn app.connector:app --port 8001  # the Claude connector (MCP at /mcp); see below
     pytest -q                              # also validates brand_icons/icons.json; always offline
 
 Modes: **replace** (default) swaps each PL logo placeholder for an icon and adds nothing anywhere else.
 **add** does that too, and on slides without placeholders finds where icons fit (see Items and placement).
 **suggest** plans what add would do without touching the deck; the UI then adds the chosen picks.
+
+## Claude connector (app/connector.py)
+
+A remote MCP server, so designers can run the tool from Claude chat, Cowork, Claude Code and the Claude add-in for
+PowerPoint. Decks never pass through the chat: `start_icon_run` returns a private upload link, the run starts on
+upload, and the designer gets a new copy. `get_icon_run` reports the picks and flags, `choose_icons` writes a fresh
+copy with the icons the designer picks for flagged placeholders (or the suggestions they keep), and `search_icons`
+looks up the library. Designers sign in with Microsoft 365 (Entra ID, `app/auth.py`); a run belongs to whoever
+started it, and its deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the
+test UI (`app/jobs.py`). Hosting on Render (`render.yaml`), the Entra app registration and adding the connector in
+Claude: `app/connector-setup.md`.
 
 ## PL logo placeholders (app/placeholders.py)
 
@@ -141,4 +153,5 @@ tags find their icons, with the same rules.
 - Real line positions for list icons, safe-margin indent, centered cards (`placement.py`)
 - KPI tiles, grouped shapes, tables, inherited font sizes (`deck.py`)
 - Render-and-check step (LibreOffice to PNG) before returning
-- Auth, job cleanup, upload UI; Office add-in front end calling `/jobs`
+- Connector: take OneDrive/SharePoint links instead of an upload (Microsoft Graph); a visual picker for flagged
+  placeholders in Claude (MCP App)
