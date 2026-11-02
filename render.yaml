@@ -1,5 +1,5 @@
-# Render blueprint for the Claude connector (app/connector.py). Setup, Entra ID and the custom domain:
-# app/connector-setup.md. Only the connector runs here: the test UI (app.main) has no sign-in and is never deployed.
+# Render blueprint for the Claude connector (app/connector.py). Setup and sign-in: app/connector-setup.md.
+# Only the connector runs here: the test UI (app.main) has no sign-in and is never deployed.
 services:
   - type: web
     name: prezlab-icons
@@ -22,11 +22,14 @@ services:
         value: ./icons
       - key: ICON_WORK_DIR
         value: /var/data/runs
-      - key: ICON_PUBLIC_URL      # the custom domain, e.g. https://icons.prezlab.com (no trailing slash)
+      # Designers sign in with their Odoo login, as in Image Studio: copy its ODOO_URL and ODOO_DB.
+      - key: ODOO_URL
         sync: false
-      - key: ENTRA_TENANT_ID
+      - key: ODOO_DB
         sync: false
-      - key: ENTRA_CLIENT_ID
+      - key: ODOO_ALLOWED_EMAIL_DOMAIN
+        value: prezlab.com
+      - key: ODOO_TD_ENCRYPTION_KEY    # a new random key (connector-setup.md); seals 2FA trusted-device keys
         sync: false
       - key: ANTHROPIC_API_KEY    # Claude picks the icons; without it, keyword matching (rougher picks)
         sync: false

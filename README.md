@@ -23,9 +23,10 @@ A remote MCP server, so designers can run the tool from Claude chat, Cowork, Cla
 PowerPoint. Decks never pass through the chat: `start_icon_run` returns a private upload link, the run starts on
 upload, and the designer gets a new copy. `get_icon_run` reports the picks and flags, `choose_icons` writes a fresh
 copy with the icons the designer picks for flagged placeholders (or the suggestions they keep), and `search_icons`
-looks up the library. Designers sign in with Microsoft 365 (Entra ID, `app/auth.py`); a run belongs to whoever
+looks up the library. Designers sign in with their Odoo login, as in Image Studio (`app/oauth.py`, `app/odoo.py`):
+the connector is its own OAuth server, so it runs on Render's own address with no domain. A run belongs to whoever
 started it, and its deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the
-test UI (`app/jobs.py`). Hosting on Render (`render.yaml`), the Entra app registration and adding the connector in
+test UI (`app/jobs.py`). Hosting on Render (`render.yaml`) and adding the connector in
 Claude: `app/connector-setup.md`.
 
 ## PL logo placeholders (app/placeholders.py)

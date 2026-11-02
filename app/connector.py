@@ -5,7 +5,7 @@ The deck never passes through the chat. start_icon_run makes a private link to a
 .pptx; the run starts on upload, and the page then shows its progress and the download. Claude follows along with
 get_icon_run, goes through the flagged placeholders with the designer, and choose_icons writes a new copy with their
 picks. The original deck is never changed. Runs (deck, copy, links) are deleted after ICON_RUN_TTL_HOURS.
-Sign-in: auth.py. Hosting and Entra ID setup: connector-setup.md."""
+Sign-in: auth.py (designers use their Odoo login: oauth.py). Hosting: connector-setup.md."""
 import hmac
 import html
 import json
@@ -31,7 +31,7 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import auth, config, jobs
+from . import auth, config, jobs, oauth, pages
 from .library import Library
 
 log = logging.getLogger("icon-connector")
@@ -107,13 +107,13 @@ def _link(run: dict, *tail: str) -> str:
 
 
 def _caller() -> str | None:
-    """The signed-in designer (their Entra object id); None without per-person sign-in."""
+    """The signed-in designer (their Odoo email); None without per-person sign-in."""
     token = get_access_token()
     return token.subject if token else None
 
 
 def _run(run_id: str, caller: str | None) -> tuple[Path, dict]:
-    """A live run the caller may use. With Entra sign-in, a run belongs to whoever started it."""
+    """A live run the caller may use. With Odoo sign-in, a run belongs to whoever started it."""
     run_dir = config.WORK_DIR / run_id
     if RUN_ID.fullmatch(run_id) and (run_dir / RUN_FILE).exists():
         run = _read(run_dir)
@@ -293,35 +293,12 @@ TOOLS = [
 
 # --- run pages (what the designer opens from the link) ----------------------------------------------------------
 
-PRIVATE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex"}
 MODE_TEXT = {"replace": "replace the PL logo placeholders with icons from the Prezlab library",
              "add": "add icons from the Prezlab library where they fit",
              "suggest": "suggest icons from the Prezlab library (Claude then adds the ones you choose)"}
-PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">%REFRESH%<title>Prezlab Icons</title><style>
-:root { color-scheme: light dark; --bg: #f6f6f4; --card: #ffffff; --text: #1d1d1b; --muted: #66665f; --line: #e2e2dc;
-  --accent: #1d1d1b; --on-accent: #ffffff; --bad: #a3262a; }
-@media (prefers-color-scheme: dark) { :root { --bg: #151514; --card: #1e1e1d; --text: #ededea; --muted: #a5a59e;
-  --line: #34342f; --accent: #ededea; --on-accent: #151514; --bad: #f08a8d; } }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 560px; margin: 48px auto; padding: 0 16px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
-h1 { font-size: 20px; margin: 0 0 8px; } p, li { color: var(--muted); } .bad { color: var(--bad); }
-.button, button { display: inline-block; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px;
-  padding: 10px 16px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
-input[type=file] { display: block; margin: 16px 0; font: inherit; color: var(--text); max-width: 100%; }
-small { color: var(--muted); }
-</style></head><body><main><div class="card">%BODY%</div></main></body></html>"""
-
-
-def _page(body: str, status: int = 200, refresh: bool = False) -> HTMLResponse:
-    page = PAGE.replace("%REFRESH%", '<meta http-equiv="refresh" content="3">' if refresh else "")
-    return HTMLResponse(page.replace("%BODY%", body), status, headers=PRIVATE)
-
 
 def _gone() -> HTMLResponse:
-    return _page("<h1>This link has expired</h1><p>Runs and their files are deleted after "
+    return pages.render("<h1>This link has expired</h1><p>Runs and their files are deleted after "
                  f"{config.RUN_TTL_HOURS:g} hours. Ask Claude to start a new run.</p>", 404)
 
 
@@ -338,7 +315,7 @@ def _link_run(request: Request) -> tuple[Path, dict] | None:
 
 
 def _upload_form(run: dict, error: str = "", status: int = 200) -> HTMLResponse:
-    return _page(f"""<h1>Upload your deck</h1>
+    return pages.render(f"""<h1>Upload your deck</h1>
 <p>Prezlab Icons will {MODE_TEXT[run['mode']]} and give you a new copy. Your original file isn't changed.</p>
 {f'<p class="bad">{html.escape(error)}</p>' if error else ''}
 <form method="post" enctype="multipart/form-data"><input type="file" name="deck" accept=".pptx" required>
@@ -359,10 +336,10 @@ async def run_page(request: Request) -> Response:
     if status == "waiting":
         return _upload_form(run)
     if status in ("receiving", "running"):
-        return _page("<h1>Placing icons…</h1><p>This page updates by itself. You can go back to Claude: it sees the "
+        return pages.render("<h1>Placing icons…</h1><p>This page updates by itself. You can go back to Claude: it sees the "
                      "result too.</p>", refresh=True)
     if status == "failed":
-        return _page(f"<h1>This run didn't finish</h1><p class='bad'>{html.escape(run['error'])}</p>"
+        return pages.render(f"<h1>This run didn't finish</h1><p class='bad'>{html.escape(run['error'])}</p>"
                      "<p>Ask Claude to start a new run.</p>")
     rep = jobs.saved(run_dir)
     flagged = [f for f in rep["flags"] if f.get("spot")]
@@ -371,10 +348,10 @@ async def run_page(request: Request) -> Response:
     more = (f"<p>{len(flagged)} placeholder{'s' if len(flagged) != 1 else ''} left for you to choose:</p><ul>{items}"
             "</ul><p>Back in Claude, ask it to go through them with you.</p>") if flagged else ""
     if jobs.output(run_dir) is None:   # suggest mode: nothing added yet
-        return _page(f"<h1>Suggestions ready</h1><p>{len(rep['picks'])} icons suggested. Go back to Claude to choose "
+        return pages.render(f"<h1>Suggestions ready</h1><p>{len(rep['picks'])} icons suggested. Go back to Claude to choose "
                      f"which ones to add.</p>{more}")
     icons = run["copy_icons"] or 0
-    return _page(f"<h1>Done</h1><p>{icons} icon{'s' if icons != 1 else ''} in the new copy.</p>"
+    return pages.render(f"<h1>Done</h1><p>{icons} icon{'s' if icons != 1 else ''} in the new copy.</p>"
                  f"<p><a class='button' href='{html.escape(_link(run, 'download'))}'>Download the new copy</a></p>{more}")
 
 
@@ -417,8 +394,8 @@ async def download(request: Request) -> Response:
         return _gone()
     out = jobs.output(found[0])
     if out is None:
-        return _page("<h1>No copy yet</h1><p>Go back to Claude to choose which icons to add.</p>", 404)
-    return FileResponse(out, filename=out.name, headers=PRIVATE)
+        return pages.render("<h1>No copy yet</h1><p>Go back to Claude to choose which icons to add.</p>", 404)
+    return FileResponse(out, filename=out.name, headers=pages.PRIVATE)
 
 
 async def health(request: Request) -> Response:
@@ -428,13 +405,18 @@ async def health(request: Request) -> Response:
 # --- app --------------------------------------------------------------------------------------------------------
 
 def build_app(mode: str | None = None):
-    """The connector: the MCP endpoint at /mcp behind the sign-in mode (auth.py), and the run pages."""
+    """The connector: the MCP endpoint at /mcp behind the sign-in mode (auth.py), the run pages and, with Odoo
+    sign-in, the OAuth endpoints and sign-in page."""
     mode = mode or auth.mode()
     mcp_url = config.PUBLIC_URL + MCP_PATH
+    provider = oauth.Provider(oauth.Store(config.AUTH_DB), config.PUBLIC_URL, mcp_url,
+                              oauth.sealing_key(config.ODOO_TD_ENCRYPTION_KEY)) if mode == "odoo" else None
     server = MCPServer("prezlab-icons", title="Prezlab Icons", instructions=INSTRUCTIONS,
-                       **(auth.entra(mcp_url) if mode == "entra" else {}))
+                       **(oauth.server_settings(provider) if provider else {}))
     for fn, annotations in TOOLS:
         server.add_tool(fn, annotations=annotations)
+    if provider:
+        server.custom_route("/signin/{request_id}", ["GET", "POST"])(provider.signin)
     server.custom_route("/runs/{run_id}/{token}", ["GET", "POST"])(run_page)
     server.custom_route("/runs/{run_id}/{token}/download", ["GET"])(download)
     server.custom_route("/health", ["GET"])(health)

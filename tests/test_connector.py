@@ -1,16 +1,15 @@
 """The Claude connector (app/connector.py, app/auth.py) and the test UI's runs (app/main.py, app/jobs.py), driven over
-HTTP the way Claude and a designer's browser use them. Offline: no Claude API calls, no Entra ID."""
+HTTP the way Claude and a designer's browser use them. Offline: no Claude API calls, and a stand-in for Odoo."""
 import json
 import time
 
-import jwt
+import httpx2
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from pptx import Presentation
 from pptx.util import Inches
 from starlette.testclient import TestClient
 
-from app import auth, config, connector
+from app import auth, config, connector, odoo
 from app.library import Library
 from test_pipeline import make_deck, make_library, pl_logo
 
@@ -25,6 +24,7 @@ def env(tmp_path, monkeypatch):
     """Keyword matching only, runs and the library in tmp_path, the connector on this machine."""
     monkeypatch.setattr(config, "USE_LLM", False)
     monkeypatch.setattr(config, "WORK_DIR", tmp_path / "jobs")
+    monkeypatch.setattr(config, "AUTH_DB", tmp_path / "jobs" / "auth.sqlite3")
     monkeypatch.setattr(config, "LIBRARY_DIR", tmp_path / "lib")
     monkeypatch.setattr(config, "PUBLIC_URL", BASE)
     make_library(tmp_path / "lib")
@@ -208,10 +208,9 @@ def test_a_run_belongs_to_whoever_started_it(env, monkeypatch):
 # --- sign-in ----------------------------------------------------------------------------------------------------
 
 def test_a_reachable_connector_never_runs_without_sign_in(monkeypatch):
-    monkeypatch.setattr(config, "PUBLIC_URL", "https://icons.example.com")
-    monkeypatch.setattr(config, "AUTH", "")
-    monkeypatch.setattr(config, "ENTRA_TENANT_ID", "")
-    monkeypatch.setattr(config, "MCP_TOKEN", "")
+    monkeypatch.setattr(config, "PUBLIC_URL", "https://prezlab-icons.onrender.com")
+    for name in ("AUTH", "ODOO_URL", "ODOO_DB", "MCP_TOKEN", "ODOO_TD_ENCRYPTION_KEY"):
+        monkeypatch.setattr(config, name, "")
     with pytest.raises(RuntimeError, match="needs sign-in"):
         auth.mode()
     monkeypatch.setattr(config, "MCP_TOKEN", "short")
@@ -219,6 +218,22 @@ def test_a_reachable_connector_never_runs_without_sign_in(monkeypatch):
         auth.mode()
     monkeypatch.setattr(config, "MCP_TOKEN", "x" * 40)
     assert auth.mode() == "token"
+    monkeypatch.setattr(config, "ODOO_URL", ODOO)
+    with pytest.raises(RuntimeError, match="ODOO_DB"):
+        auth.mode()
+    monkeypatch.setattr(config, "ODOO_DB", "prezlab")
+    assert auth.mode() == "odoo"
+    monkeypatch.setattr(config, "ODOO_TD_ENCRYPTION_KEY", "too short")
+    with pytest.raises(RuntimeError, match="32"):
+        auth.mode()
+    monkeypatch.setattr(config, "ODOO_TD_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(config, "PUBLIC_URL", "http://prezlab-icons.onrender.com")
+    with pytest.raises(RuntimeError, match="https"):
+        auth.mode()
+    monkeypatch.setattr(config, "PUBLIC_URL", BASE)   # on Render without its address: refused, not left on localhost
+    monkeypatch.setenv("RENDER", "true")
+    with pytest.raises(RuntimeError, match="ICON_PUBLIC_URL"):
+        auth.mode()
 
 
 def test_token_mode_needs_the_token_for_tools_but_not_for_the_run_pages(monkeypatch):
@@ -232,80 +247,210 @@ def test_token_mode_needs_the_token_for_tools_but_not_for_the_run_pages(monkeypa
         assert not error and c.get(run["upload_link"]).status_code == 200
 
 
-TENANT, CLIENT_ID = "11111111-2222-3333-4444-555555555555", "66666666-7777-8888-9999-000000000000"
-APP_ID_URI = f"{BASE}/mcp"
+ODOO = "https://prezlab.odoo.test"
+CALLBACK = "https://claude.ai/api/mcp/auth_callback"
+TOTP_PAGE = '<form><input type="hidden" name="csrf_token" value="csrf-0123456789"><input name="totp_token"></form>'
 
 
-class FakeEntra:
-    """Entra's signing keys, for tokens made in the test."""
+class FakeOdoo:
+    """Odoo's login endpoints, as Image Studio found them: designer@ signs in with a password, twofa@ also needs the
+    code 123456 (or a trusted device), client@ is a portal user. Odoo sessions are s-<uid> once signed in, p-<uid>
+    while waiting for a code."""
+    USERS = {"designer@prezlab.com": (7, False), "twofa@prezlab.com": (8, True), "client@example.com": (9, False)}
 
     def __init__(self):
-        self.private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.devices, self.passwords_sent = set(), 0
 
-    def get_signing_key_from_jwt(self, token):
-        return jwt.PyJWK.from_dict({**json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(self.private.public_key())),
-                                    "kid": "k1"})
-
-    def token(self, key=None, **changes):
-        now = int(time.time())
-        claims = {"iss": f"https://login.microsoftonline.com/{TENANT}/v2.0", "aud": CLIENT_ID, "tid": TENANT,
-                  "oid": "designer-oid", "azp": "claude-client", "scp": "access_as_user", "iat": now,
-                  "exp": now + 3600, **changes}
-        return jwt.encode(claims, key or self.private, algorithm="RS256", headers={"kid": "k1"})
+    def __call__(self, request):
+        from urllib.parse import parse_qs
+        cookies = dict(c.split("=", 1) for c in request.headers.get("cookie", "").split("; ") if "=" in c)
+        session, path = cookies.get("session_id", ""), request.url.path
+        if path == "/web/session/authenticate":
+            self.passwords_sent += 1
+            p = json.loads(request.content)["params"]
+            uid, twofa = self.USERS.get(p["login"].lower(), (0, False))
+            if not uid or p["password"] != "pw" or p["db"] != "prezlab":
+                return httpx2.Response(200, json={"error": {"data": {"message": "Access Denied"}}})
+            return httpx2.Response(200, json={"result": {"uid": False if twofa else uid}},
+                                   headers={"set-cookie": f"session_id={'p' if twofa else 's'}-{uid}; Path=/"})
+        if path == "/web/login/totp" and request.method == "GET":
+            if session.startswith("p-") and cookies.get("td_id") in self.devices:
+                return httpx2.Response(303, headers={"location": "/odoo", "set-cookie": f"session_id=s-{session[2:]}"})
+            return httpx2.Response(200, text=TOTP_PAGE if session.startswith("p-") else "<form>login</form>")
+        if path == "/web/login/totp":
+            form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            if form.get("totp_token") != "123456" or form.get("csrf_token") != "csrf-0123456789":
+                return httpx2.Response(200, text=TOTP_PAGE)
+            self.devices.add(f"td-{session}")
+            return httpx2.Response(303, headers=[("location", "/odoo"), ("set-cookie", f"td_id=td-{session}; Path=/"),
+                                                 ("set-cookie", f"session_id=s-{session[2:]}; Path=/")])
+        uid = int(session[2:]) if session.startswith("s-") else 0
+        if path == "/web/session/get_session_info":
+            return httpx2.Response(200, json={"result": {"uid": uid or False}})
+        if path == "/web/dataset/call_kw":
+            login = next(k for k, v in self.USERS.items() if v[0] == uid)
+            return httpx2.Response(200, json={"result": [{"login": login, "name": login.split("@")[0], "email": login,
+                                                          "active": True, "share": uid == 9}]})
+        return httpx2.Response(404)
 
 
 @pytest.fixture
-def entra(monkeypatch):
-    fake = FakeEntra()
-    monkeypatch.setattr(config, "ENTRA_TENANT_ID", TENANT)
-    monkeypatch.setattr(config, "ENTRA_CLIENT_ID", CLIENT_ID)
-    monkeypatch.setattr(auth.jwt, "PyJWKClient", lambda *a, **k: fake)
+def odoo_signin(monkeypatch):
+    fake = FakeOdoo()
+    monkeypatch.setattr(config, "ODOO_URL", ODOO)
+    monkeypatch.setattr(config, "ODOO_DB", "prezlab")
+    monkeypatch.setattr(config, "ODOO_TD_ENCRYPTION_KEY", "k" * 40)
+    monkeypatch.setattr(odoo, "TRANSPORT", httpx2.MockTransport(fake))
     return fake
 
 
-@pytest.mark.parametrize("changes, accepted", [
-    ({}, True),
-    ({"aud": APP_ID_URI, "iss": f"https://sts.windows.net/{TENANT}/"}, True),   # a v1 token, for the App ID URI
-    ({"aud": "someone-else"}, False),
-    ({"tid": "another-tenant"}, False),
-    ({"iss": "https://login.microsoftonline.com/another-tenant/v2.0"}, False),
-    ({"exp": int(time.time()) - 600}, False),
-])
-def test_entra_tokens_are_accepted_only_from_the_tenant_for_this_app(entra, changes, accepted):
-    import anyio
-    verifier = auth.EntraTokenVerifier(TENANT, CLIENT_ID, APP_ID_URI, entra)
-    token = anyio.run(verifier.verify_token, entra.token(**changes))
-    assert (token is not None) == accepted
-    if accepted:
-        assert token.subject == "designer-oid" and token.scopes == [f"{APP_ID_URI}/access_as_user"]
+def pkce():
+    import base64
+    import hashlib
+    import secrets
+    verifier = secrets.token_urlsafe(48)
+    return verifier, base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
 
 
-def test_a_token_signed_by_another_key_is_refused(entra):
-    import anyio
-    verifier = auth.EntraTokenVerifier(TENANT, CLIENT_ID, APP_ID_URI, entra)
-    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    assert anyio.run(verifier.verify_token, entra.token(key=other)) is None
+def register(c, redirect=CALLBACK):
+    return c.post("/register", json={"redirect_uris": [redirect], "client_name": "Claude",
+                                     "token_endpoint_auth_method": "none",
+                                     "grant_types": ["authorization_code", "refresh_token"],
+                                     "response_types": ["code"]})
 
 
-def test_entra_mode_points_claude_to_sign_in_and_runs_belong_to_the_designer(env, entra):
-    with client("entra") as c:
-        r = c.post("/mcp", headers=MCP, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+def start_signin(c, client_id, challenge):
+    """Claude's /authorize request: the sign-in page it sends the designer to."""
+    r = c.get("/authorize", params={"response_type": "code", "client_id": client_id, "redirect_uri": CALLBACK,
+                                    "code_challenge": challenge, "code_challenge_method": "S256", "state": "st-1",
+                                    "scope": "icons", "resource": f"{BASE}/mcp"}, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"].startswith(f"{BASE}/signin/"), r.text
+    return r.headers["location"]
+
+
+def back_to_claude(r):
+    """The code and state the sign-in page sends the designer back to Claude with."""
+    from urllib.parse import parse_qs, urlsplit
+    assert r.status_code == 303 and r.headers["location"].startswith(CALLBACK + "?"), r.text
+    query = parse_qs(urlsplit(r.headers["location"]).query)
+    return query["code"][0], query["state"][0]
+
+
+def signed_in(c, login="designer@prezlab.com"):
+    """Sign in the way Claude and a designer do. Returns (client_id, tokens)."""
+    client_id = register(c).json()["client_id"]
+    verifier, challenge = pkce()
+    page = start_signin(c, client_id, challenge)
+    code, _ = back_to_claude(c.post(page, data={"login": login, "password": "pw"}, follow_redirects=False))
+    tokens = c.post("/token", data={"grant_type": "authorization_code", "code": code, "redirect_uri": CALLBACK,
+                                    "client_id": client_id, "code_verifier": verifier})
+    assert tokens.status_code == 200, tokens.text
+    return client_id, tokens.json()
+
+
+def bearer(tokens):
+    return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+def tools_list(c, headers=None):
+    return c.post("/mcp", headers={**MCP, **(headers or {})}, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+
+
+def test_designers_sign_in_with_odoo_and_runs_belong_to_them(env, odoo_signin):
+    with client("odoo") as c:
+        r = tools_list(c)
         assert r.status_code == 401
-        assert 'resource_metadata="http://127.0.0.1:8001/.well-known/oauth-protected-resource/mcp"' in \
-            r.headers["www-authenticate"]
+        assert f'resource_metadata="{BASE}/.well-known/oauth-protected-resource/mcp"' in r.headers["www-authenticate"]
         meta = c.get("/.well-known/oauth-protected-resource/mcp").json()
-        assert meta["resource"] == APP_ID_URI
-        assert meta["authorization_servers"] == [f"https://login.microsoftonline.com/{TENANT}/v2.0"]
-        assert meta["scopes_supported"] == [f"{APP_ID_URI}/access_as_user"]
+        assert meta["resource"] == f"{BASE}/mcp" and meta["authorization_servers"] == [BASE]
+        server = c.get("/.well-known/oauth-authorization-server").json()
+        assert server["authorization_endpoint"] == f"{BASE}/authorize" and server["registration_endpoint"]
+        assert register(c, "https://attacker.example/callback").status_code == 400   # Claude's return addresses only
 
-        no_scope = {"Authorization": f"Bearer {entra.token(scp='User.Read')}"}
-        assert c.post("/mcp", headers={**MCP, **no_scope}, json={"jsonrpc": "2.0", "id": 1,
-                                                                   "method": "tools/list"}).status_code == 403
-        error, run = call(c, "start_icon_run", {"Authorization": f"Bearer {entra.token()}"})
+        client_id = register(c).json()["client_id"]
+        verifier, challenge = pkce()
+        page = start_signin(c, client_id, challenge)
+        form = c.get(page)
+        assert "Sign in to Prezlab Icons" in form.text and "claude.ai" in form.text
+        assert form.headers["x-frame-options"] == "DENY" and form.headers["cache-control"] == "no-store"
+        wrong = c.post(page, data={"login": "designer@prezlab.com", "password": "nope"})
+        assert wrong.status_code == 401 and "recognized" in wrong.text
+        code, state = back_to_claude(c.post(page, data={"login": "designer@prezlab.com", "password": "pw"},
+                                            follow_redirects=False))
+        assert state == "st-1"
+        assert c.get(page).status_code == 404                                  # the sign-in link is used up
+
+        token_request = {"grant_type": "authorization_code", "code": code, "redirect_uri": CALLBACK,
+                         "client_id": client_id, "code_verifier": "not-the-verifier-" + "x" * 30}
+        assert c.post("/token", data=token_request).json()["error"] == "invalid_grant"   # PKCE
+        tokens = c.post("/token", data={**token_request, "code_verifier": verifier}).json()
+        assert tokens["scope"] == "icons" and tokens["expires_in"] == 3600 and tokens["refresh_token"]
+
+        assert tools_list(c, bearer(tokens)).status_code == 200
+        error, run = call(c, "start_icon_run", bearer(tokens))
         assert not error
-        assert json.loads((env / "jobs" / run["run_id"] / "run.json").read_text())["owner"] == "designer-oid"
-        other = {"Authorization": f"Bearer {entra.token(oid='someone-else')}"}
-        assert call(c, "get_icon_run", other, run_id=run["run_id"])[0]
+        assert json.loads((env / "jobs" / run["run_id"] / "run.json").read_text())["owner"] == "designer@prezlab.com"
+        _, other = signed_in(c)                                                # another sign-in, same designer
+        assert not call(c, "get_icon_run", bearer(other), run_id=run["run_id"])[0]
+
+        assert c.post("/token", data={**token_request, "code_verifier": verifier}).status_code == 400   # code replay
+        assert tools_list(c, bearer(tokens)).status_code == 401              # ...ends the sign-in it made
+        assert (env / "jobs" / "auth.sqlite3").exists()
+
+
+def test_refresh_tokens_rotate_and_a_reused_one_ends_the_sign_in(env, odoo_signin):
+    with client("odoo") as c:
+        client_id, first = signed_in(c)
+        refresh = {"grant_type": "refresh_token", "refresh_token": first["refresh_token"], "client_id": client_id}
+        second = c.post("/token", data=refresh).json()
+        assert second["refresh_token"] != first["refresh_token"] and tools_list(c, bearer(second)).status_code == 200
+        assert c.post("/token", data=refresh).json()["error"] == "invalid_grant"    # the old one, again
+        assert tools_list(c, bearer(second)).status_code == 401                   # ...revokes the newer tokens too
+        _, third = signed_in(c)
+        assert tools_list(c, bearer(third)).status_code == 200                    # other sign-ins carry on
+
+
+def test_two_factor_sign_in_asks_for_a_code_once_per_device(env, odoo_signin):
+    with client("odoo") as c:
+        client_id = register(c).json()["client_id"]
+        page = start_signin(c, client_id, pkce()[1])
+        asked = c.post(page, data={"login": "twofa@prezlab.com", "password": "pw"})
+        assert "Enter your code" in asked.text and "Enter your code" in c.get(page).text
+        sent = odoo_signin.passwords_sent
+        wrong = c.post(page, data={"code": "000000"})
+        assert wrong.status_code == 401 and "Enter your code" in wrong.text
+        back_to_claude(c.post(page, data={"code": "123 456"}, follow_redirects=False))
+        assert odoo_signin.passwords_sent == sent                                  # the password went to Odoo once
+        sealed = connector.oauth.Store(env / "jobs" / "auth.sqlite3").row("SELECT sealed FROM devices")["sealed"]
+        assert "td-" not in sealed                                                 # the 2FA bypass key is sealed
+
+        again = start_signin(c, client_id, pkce()[1])                              # next sign-in: no code needed
+        back_to_claude(c.post(again, data={"login": "TwoFA@prezlab.com", "password": "pw"}, follow_redirects=False))
+
+        restart = start_signin(c, client_id, pkce()[1])
+        odoo_signin.devices.clear()                                                # Odoo forgot the device
+        assert "Enter your code" in c.post(restart, data={"login": "twofa@prezlab.com", "password": "pw"}).text
+        assert "Sign in to Prezlab Icons" in c.post(restart, data={"restart": "1"}).text
+
+
+@pytest.mark.parametrize("login, message", [
+    ("client@example.com", "portal account"),
+    ("nobody@prezlab.com", "recognized"),
+])
+def test_only_prezlab_staff_can_sign_in(env, odoo_signin, login, message):
+    with client("odoo") as c:
+        page = start_signin(c, register(c).json()["client_id"], pkce()[1])
+        refused = c.post(page, data={"login": login, "password": "pw"}, follow_redirects=False)
+        assert refused.status_code == 401 and message in refused.text
+
+
+def test_sign_in_attempts_are_rate_limited(env, odoo_signin):
+    with client("odoo") as c:
+        page = start_signin(c, register(c).json()["client_id"], pkce()[1])
+        codes = [c.post(page, data={"login": "designer@prezlab.com", "password": "nope"}).status_code
+                 for _ in range(7)]
+        assert codes == [401] * 6 + [429]
+        assert c.get(f"{BASE}/signin/made-up").status_code == 404
 
 
 # --- the test UI's runs share the same apply step ---------------------------------------------------------------

@@ -13,13 +13,17 @@ ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-5-5")
 ANTHROPIC_EFFORT = os.getenv("ANTHROPIC_EFFORT", "low")
 USE_LLM = bool(os.getenv("ANTHROPIC_API_KEY"))  # falls back to keyword matching without a key
 
-# Claude connector (connector.py): the address Claude reaches it at, and who may call it (auth.py).
-PUBLIC_URL = os.getenv("ICON_PUBLIC_URL", "http://127.0.0.1:8001").rstrip("/")
-AUTH = os.getenv("ICON_AUTH", "").lower()       # entra | token | none; empty: picked from the settings below
+# Claude connector (connector.py): the address Claude reaches it at (on Render, the service's own address unless set),
+# and who may call it (auth.py).
+PUBLIC_URL = (os.getenv("ICON_PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") or "http://127.0.0.1:8001").rstrip("/")
+AUTH = os.getenv("ICON_AUTH", "").lower()       # odoo | token | none; empty: picked from the settings below
 MCP_TOKEN = os.getenv("ICON_MCP_TOKEN", "")     # token mode: the one shared bearer token
-ENTRA_TENANT_ID = os.getenv("ENTRA_TENANT_ID", "")
-ENTRA_CLIENT_ID = os.getenv("ENTRA_CLIENT_ID", "")
-ENTRA_SCOPE = os.getenv("ENTRA_SCOPE", "access_as_user")
+# Odoo sign-in (odoo.py, oauth.py): the same values as Image Studio's.
+ODOO_URL = os.getenv("ODOO_URL", "").rstrip("/")
+ODOO_DB = os.getenv("ODOO_DB", "")
+ODOO_ALLOWED_EMAIL_DOMAIN = os.getenv("ODOO_ALLOWED_EMAIL_DOMAIN", "prezlab.com").strip().lower()   # "" = any
+ODOO_TD_ENCRYPTION_KEY = os.getenv("ODOO_TD_ENCRYPTION_KEY", "")   # seals 2FA trusted-device keys; unset: code each time
+AUTH_DB = Path(os.getenv("ICON_AUTH_DB") or WORK_DIR / "auth.sqlite3")   # sign-ins and tokens
 RUN_TTL_HOURS = float(os.getenv("ICON_RUN_TTL_HOURS", "24"))   # a run's deck, copy and links are deleted after this
 MAX_DECK_MB = int(os.getenv("ICON_MAX_DECK_MB", "150"))
 PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed at the same time; the rest queue
