@@ -490,6 +490,13 @@ $("#run").onsubmit = async e => {
   }
 };
 
+// How Claude read an item before picking (the prompt enhancement) and what its icon could show; without it (keyword
+// matching), the idea it was matched on.
+const readAs = (item, icon = "") => item.reads_as
+  ? `${esc(item.reads_as)}${item.show && item.show.length ? `<div class="note" style="margin:0">Could show: ${
+      item.show.map(esc).join(", ")}</div>` : ""}`
+  : item.concept && item.concept !== icon ? `<span class="mono">${esc(item.concept)}</span>` : "-";
+
 // A results section: collapsed until the designer opens it; its header says how much is inside.
 const section = (title, count, body, id = "") => `<details class="panel fold"${id ? ` id="${id}"` : ""}>
     <summary><h2>${title}</h2>${count ? `<span class="count">${count}</span>` : ""}</summary>
@@ -519,14 +526,14 @@ function renderResult(r) {
     </div><div id="apply-msg"></div>` : "";
   const picks = r.picks.length ? section("Picks", `${r.picks.length}`, `${bar}<table>
       <tr>${choose ? '<th class="tick"><input type="checkbox" id="pick-all" title="Select all"></th>' : ""}
-        <th>Slide</th><th>Item</th><th>Concept</th><th>Icon</th><th>Color</th><th>Why</th><th>Alternatives</th></tr>
+        <th>Slide</th><th>Item</th><th>Read as</th><th>Icon</th><th>Color</th><th>Why</th><th>Alternatives</th></tr>
       ${r.picks.map((p, n) => ({p, n})).sort((a, b) => a.p.item.slide - b.p.item.slide).map(({p, n}) => `<tr>
         ${choose ? `<td class="tick"><input type="checkbox" class="pick-box" value="${n}" aria-label="Add this icon"></td>` : ""}
         <td>${p.item.slide}</td>
         <td>${esc(p.item.text)}<div class="note" style="margin:0">${esc(p.item.kind)}${p.flip ? " · mirrored" : ""}${
           p.position ? ` · ${esc(p.position)} the text` : ""}${
           p.indent ? ` · <b>layout change:</b> text moved ${esc(p.indent.toFixed(2))}in ${p.item.rtl ? "left" : "right"} to make room` : ""}</div></td>
-        <td class="mono">${p.item.concept && p.item.concept !== p.icon.id ? esc(p.item.concept) : "-"}</td>
+        <td>${readAs(p.item, p.icon.id)}</td>
         <td><div class="pick">${img(p.icon.id, 40)}<b>${esc(p.icon.id)}</b></div></td>
         <td class="color-cell"><span class="swatch" style="background:#${esc(p.color_hex)}"></span>
           <b>${esc(p.color_slot)}</b><div class="note" style="margin:0">${esc(p.color_note)}</div></td>
@@ -548,9 +555,9 @@ function renderResult(r) {
         <aside class="chooser" id="chooser" aria-live="polite"></aside>
       </div>`, "review") : "";
   const flags = r.flags.length ? section("Flagged (no icon added)", `${r.flags.length}`, `<table>
-      <tr><th>Slide</th><th>Item</th><th>Concept</th><th>Reason</th><th>Options</th></tr>
+      <tr><th>Slide</th><th>Item</th><th>Read as</th><th>Reason</th><th>Options</th></tr>
       ${r.flags.map((f, n) => `<tr>
-        <td>${f.item.slide}</td><td>${esc(f.item.text)}</td><td class="mono">${esc(f.item.concept) || "-"}</td>
+        <td>${f.item.slide}</td><td>${esc(f.item.text)}</td><td>${readAs(f.item)}</td>
         <td>${esc(f.reason)}</td>
         <td><div class="alts">${f.options.map(a => `<div class="alt">${img(a, 26)}${esc(a)}</div>`).join("") || "-"}</div>${
           f.spot ? `<button class="secondary" type="button" data-review="${n}" style="margin-top:8px">Choose on the slide</button>` : ""}</td>
@@ -736,6 +743,8 @@ function drawReview() {
   const k = here.findIndex(o => o.n === rv.sel);
   $("#chooser").innerHTML = `<div class="lbl" style="margin-top:0">Slide ${slide} · placeholder ${k + 1} of ${here.length}</div>
     <div class="label-text">${esc(cur.f.item.text)}</div>
+    ${cur.f.item.reads_as ? `<div class="note" style="margin:0 0 6px">Read as: ${esc(cur.f.item.reads_as)}${
+      cur.f.item.show && cur.f.item.show.length ? ` (could show ${cur.f.item.show.map(esc).join(", ")})` : ""}</div>` : ""}
     <div class="note" style="margin:0 0 6px">${esc(cur.f.reason)}</div>
     ${applied[rv.sel] ? `<div class="note" style="margin:0 0 6px">In the latest copy: <b>${esc(nameOf(applied[rv.sel]))}</b></div>` : ""}
     <div class="lbl">Closest icons</div>

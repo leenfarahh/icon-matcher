@@ -179,11 +179,12 @@ def _results(run_dir: Path, run: dict) -> dict:
     placeholder a designer can fill, the report's notes and the copy's download link."""
     rep, lib = jobs.saved(run_dir), _library()
     settings = rep["settings"]
-    icons = [{"pick": n, "slide": p["item"]["slide"], "label": _label(p["item"]["text"]), "icon": p["icon"]["id"],
-              "draws": p["icon"]["description"], "color": f"{p['color_slot']} #{p['color_hex']}", "why": p["reason"]}
+    icons = [{"pick": n, "slide": p["item"]["slide"], "label": _label(p["item"]["text"]),
+              "read_as": p["item"].get("reads_as", ""), "icon": p["icon"]["id"], "draws": p["icon"]["description"],
+              "color": f"{p['color_slot']} #{p['color_hex']}", "why": p["reason"]}
              for n, p in enumerate(rep["picks"])]
-    flagged = [{"flag": n, "slide": f["item"]["slide"], "label": _label(f["item"]["text"]), "reason": f["reason"],
-                "can_choose": bool(f.get("spot")),
+    flagged = [{"flag": n, "slide": f["item"]["slide"], "label": _label(f["item"]["text"]),
+                "read_as": f["item"].get("reads_as", ""), "reason": f["reason"], "can_choose": bool(f.get("spot")),
                 "options": [{"icon": i, "draws": icon.description} for i in f.get("options", [])
                             if (icon := lib.get(i))]}
                for n, f in enumerate(rep["flags"])]

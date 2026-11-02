@@ -41,6 +41,7 @@ The service's address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICON_PUBLI
 
 Optional settings (`.env.example` lists them all): `ICON_RUN_TTL_HOURS` (24), `ICON_MAX_DECK_MB` (150),
 `ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
+`ICON_MIN_FIT` (3: how sure Claude must be to place an icon), `ICON_ENHANCE` (1: read each card before picking),
 `ODOO_ALLOWED_EMAIL_DOMAIN` (`prezlab.com`).
 
 The icon library ships with the code (`icons/`). To publish library changes, commit them and Render redeploys.

@@ -14,8 +14,10 @@ BRAND_LIBRARY = Path(__file__).resolve().parent.parent / "icons"
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
-    """Keyword matching only: an API key in .env must not make the tests call Claude."""
+    """Keyword matching only: an API key in .env must not make the tests call Claude. Tests that hand Claude's work
+    to a fake skip the first reading of each card (the prompt enhancement) unless they're about it."""
     monkeypatch.setattr(config, "USE_LLM", False)
+    monkeypatch.setattr(config, "ENHANCE", False)
 
 SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.5"><path d="{d}"/></svg>'
 ICONS = [
@@ -270,6 +272,11 @@ def sent_points(content):
     return points
 
 
+def concepts_ENHANCE():
+    from app import concepts
+    return concepts.ENHANCE
+
+
 class FakeClaude:
     """Stands in for anthropic.Anthropic(): picks one icon (by default the same one) for every point it is sent;
     asked for the closest icons (a second system block), lists options(text) for each point."""
@@ -285,6 +292,11 @@ class FakeClaude:
         self.calls, self.sent = self.calls + 1, kw
         if self.fail:
             raise self.fail
+        if kw["system"][0]["text"] == concepts_ENHANCE():   # the first reading: a brief for every point
+            self.briefed = getattr(self, "briefed", []) + [t for _, _, t in sent_points(kw["messages"][0]["content"])]
+            briefs = [{"slide": s, "point": p, "reads_as": f"about {t.lower()}", "show": ["a chart", "a shield"]}
+                      for s, p, t in sent_points(kw["messages"][0]["content"])]
+            return NS(stop_reason="end_turn", content=[NS(type="text", text=json.dumps({"briefs": briefs}))])
         if self.refuse is not False:   # declined, fallback included; refuse names the category (or None)
             return NS(stop_reason="refusal", stop_details=NS(category=self.refuse), content=[])
         points = sent_points(kw["messages"][0]["content"])
@@ -314,7 +326,9 @@ def test_llm_picks_for_large_decks_in_batches(tmp_path):
     items, fake = slide_items(130), FakeClaude(icon=" finance-growth-chart ")
     assert concepts._extract_llm(items, make_library(tmp_path / "lib"), "outline", client=fake) == []
     assert fake.calls == 3 and {i.icon_pick for i in items} == {"finance-growth-chart"}   # 60 + 60 + 10, trimmed
-    assert fake.sent["model"] == "claude-sonnet-5-5" and fake.sent["output_config"] == {"effort": "low"}
+    assert fake.sent["model"] == "claude-sonnet-5-5" and fake.sent["output_config"] == {"effort": "low",
+                                                                                         "format": concepts.CHOICES}
+    assert concepts.CHOICES["schema"]["properties"]["choices"]["items"]["required"] == ["slide", "point", "icon", "fit"]
     assert fake.sent["fallbacks"] == "default" and fake.sent["betas"] == ["server-side-fallback-2026-07-01"]
     assert "temperature" not in fake.sent and "thinking" not in fake.sent       # adaptive thinking, the default
 
@@ -1616,3 +1630,34 @@ def test_icons_claude_isnt_sure_of_are_left_for_a_designer(tmp_path, monkeypatch
     concepts._extract_llm(items, lib, "outline", client=FakeClaude(icon=lambda t: picks[t], fit=lambda t: sure[t]))
     assert all(i.icon_pick for i in items)
     assert '"fit":<1 to 5>' in concepts.system_prompt(lib, "outline")
+
+
+def test_claude_reads_each_card_once_before_picking(tmp_path, monkeypatch):
+    """The prompt enhancement: a first request reads each item (what it means, what its icon could show), once per
+    label, and the picks are made with that brief in hand. If the reading fails, the picks go ahead without it."""
+    from app import concepts
+    monkeypatch.setattr(config, "ENHANCE", True)
+    lib = make_library(tmp_path / "lib")
+    items = [pick_item(41, k, t, None, "row") for k, t in enumerate(["Revenue growth", "Team expansion"])] +             [pick_item(42, k, t, None, "row") for k, t in enumerate(["Revenue growth", "Team expansion"])]
+    picks = {"Revenue growth": "finance-growth-chart", "Team expansion": "people-team"}
+    fake = FakeClaude(icon=lambda t: picks[t.split(" | ")[0]])
+    assert concepts._extract_llm(items, lib, "outline", client=fake) == []
+    assert fake.briefed == ["Revenue growth", "Team expansion"]          # slide 42 repeats 41: read once
+    assert [(i.reads_as, i.show) for i in items[2:]] == [("about revenue growth", ["a chart", "a shield"]),
+                                                         ("about team expansion", ["a chart", "a shield"])]
+    sent = fake.sent["messages"][0]["content"]
+    assert "0. Revenue growth | reads as: about revenue growth; could show: a chart, a shield" in sent
+    assert [i.icon_pick for i in items] == ["finance-growth-chart", "people-team"] * 2
+
+    class Unreadable(FakeClaude):
+        def create(self, **kw):
+            if kw["system"][0]["text"] == concepts.ENHANCE:
+                self.calls += 1
+                from types import SimpleNamespace as NS
+                return NS(stop_reason="end_turn", content=[NS(type="text", text="I can't help with that.")])
+            return super().create(**kw)
+    items = [pick_item(1, k, t, None, "row") for k, t in enumerate(picks)]
+    notes = concepts._extract_llm(items, lib, "outline", client=Unreadable(icon=lambda t: picks[t]))
+    assert notes == ["Claude couldn't read 2 items before picking (unreadable reply: no JSON in the reply, stop "
+                     "reason end_turn); they were picked from their text alone"]
+    assert [i.icon_pick for i in items] == ["finance-growth-chart", "people-team"] and not items[0].reads_as

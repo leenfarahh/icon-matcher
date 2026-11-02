@@ -1,7 +1,9 @@
-"""Step 2: which icon each item gets. With a key, Claude picks ONE library icon per item by meaning, from its own
-knowledge of visual metaphors (it gets the icon library, not the concept map). Each candidate set goes to it as one
-slide entry, and it follows the rules in SYSTEM: exact library names, no icon twice on a slide, one style family
-per slide, all or nothing. Without a key, or when the API fails, keyword matching finds up to three ideas and the
+"""Step 2: which icon each item gets. With a key, Claude first reads each item (ENHANCE, like Image Studio's prompt
+enhancer): what it means to the deck's audience and what an icon for it could draw, once per distinct label. Then it
+picks ONE library icon per item by meaning, from its own knowledge of visual metaphors and that brief (it gets the
+icon library, not the concept map). Each candidate set goes to it as one slide entry, and it follows the rules in
+SYSTEM: exact library names, no icon twice on a slide, one style family per slide, all or nothing, and an honest
+fit (1-5) for each pick. Without a key, or when the API fails, keyword matching finds up to three ideas and the
 selector looks their icons up in the concept map and tags. For PL placeholders still left without an icon, a second
 request (CLOSEST) ranks the nearest icons for a designer to choose from."""
 import json
@@ -21,7 +23,9 @@ the name only: the text before the first " | ".
 
 SLIDES format: each slide is one group of points shown together, like a row of cards, the nodes of a diagram or
 the headings of columns, with its deck slide number and title for context. A deck slide with more than one such
-group appears as more than one slide here; treat each as a slide of its own.
+group appears as more than one slide here; treat each as a slide of its own. A point may also say how it reads and
+what its icon could show, from a first reading of the deck: use that to understand the point, then choose by rule 1
+from what the library holds.
 
 How to choose, in this order
 1. Library by meaning. Use your own knowledge of visual metaphors: choose the icon a reader would connect with
@@ -31,15 +35,16 @@ How to choose, in this order
 2. How sure you are. Give every icon a "fit" from 1 to 5: how surely a reader would connect it with the point
    at a glance, judged by what it draws. 5: the icon nearly anyone would expect. 4: a clear match. 3: a reasonable
    visual metaphor. 2: loose or generic. 1: a stretch. Rate honestly: icons below a reasonable metaphor are left
-   for a designer to choose, with yours offered first, which beats a weak icon on a client slide. If no icon gives
-   a genuine match at all, return "".
+   for a designer to choose, with yours offered first, which beats a weak icon on a client slide. Return your best
+   icon with its honest fit even when the fit is low, and leave the other points as they are. If no icon gives a
+   genuine match at all, return "".
 
 Rules
 3. Every icon you return must appear in the ICON LIBRARY, copied exactly as written. Never invent, shorten,
    translate or combine names.
 4. Do not use the same icon twice on one slide.
 5. Keep each slide consistent: {style_rule}
-6. All or nothing per slide: if any point on a slide gets "", return "" for every point on that slide. A
+6. All or nothing per slide: if any point on a slide gets "" (no icon at all), return "" for every point on that slide. A
    half-matched row of icons looks worse than the original icons.
 7. Use the slide and point numbers exactly as given (they start at 0). Return one entry for every point of every
    slide.
@@ -67,6 +72,19 @@ least one for every point. Rules 1, 3 and 7 still apply; rules 2, 4, 5 and 6 and
 Return JSON only, in this format:
 {{"options":[{{"slide":<slide number>,"point":<point number>,"icons":["<library name>", ...]}}]}}"""
 
+ENHANCE = """You prepare slide points for an icon picker. Each slide below has numbered points (a headline and a
+short gist), with the slide's title for context. For every point, say what it means to the people reading the deck
+and what an icon for it could draw.
+
+- reads_as: the idea in 3 to 8 plain words, as the deck's audience would read it. In a consulting or banking deck,
+  "Proven track record in cost optimization" is about savings already delivered for clients, not about records or
+  tracks.
+- show: up to 3 concrete things a simple one-color icon could draw for that idea, best first ("a falling bar
+  chart", "a trophy", "a shield"). Never hands or gestures, religious symbols, alcohol, pigs, or maps of countries.
+
+Return JSON only, one entry for every point of every slide, in this format:
+{"briefs":[{"slide":<slide number>,"point":<point number>,"reads_as":"<the idea>","show":["<thing>", ...]}]}"""
+
 BATCH = 60          # items per request (whole slides kept together): each JSON reply stays far below MAX_TOKENS
 MAX_TOKENS = 16000  # the reply and Claude's thinking before it
 FALLBACK_BETA = "server-side-fallback-2026-07-01"   # a declined request is retried on the model Anthropic picks
@@ -76,7 +94,7 @@ CLOSEST_BATCH = 15  # items per CLOSEST request: longer replies, so smaller batc
 
 
 def extract(items: list[Item], library, style: str) -> list[str]:
-    """Sets item.icon_pick (with Claude), item.concept and item.concepts in place.
+    """Sets item.icon_pick (with Claude, after item.reads_as and item.show), item.concept and item.concepts in place.
     Returns notes for the report, e.g. when the API failed and keyword matching stood in."""
     if not items:
         return []
@@ -121,6 +139,7 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
                "cache_control": {"type": "ephemeral"}}]  # same for every batch: cached after the first
     known = {i.id: i.family for i in _pickable(library, style)}   # what Claude may name -> its family
     invented, unsure = [], []
+    enhanced = _enhance(client, items) if config.ENHANCE else []
 
     def run(batch):
         fits = {}
@@ -161,7 +180,7 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
         with ThreadPoolExecutor(WORKERS) as pool:
             results += list(pool.map(run, batches[1:]))
 
-    notes = []
+    notes = list(enhanced)
     if invented:
         notes.append(f"Claude named {len(invented)} icons that aren't in the library "
                      f"({', '.join(sorted(set(invented))[:5])}); those items got no icon")
@@ -233,10 +252,109 @@ def _describe(groups, notes=None) -> str:
         for p, i in enumerate(members):
             head, *rest = [line.strip() for line in i.text.splitlines() if line.strip()] or [""]
             gist = " ".join(" ".join(rest).split())[:200]
-            lines.append(f"  {p}. {' '.join(head.split())[:160]}" + (f" | {gist}" if gist else ""))
+            brief = (f" | reads as: {i.reads_as}" + (f"; could show: {', '.join(i.show)}" if i.show else "")
+                     if i.reads_as else "")
+            lines.append(f"  {p}. {' '.join(head.split())[:160]}" + (f" | {gist}" if gist else "") + brief)
         if notes and _key(members[0]) in notes:
             lines.append(f"  {notes[_key(members[0])]}")
     return "\n".join(lines)
+
+
+ENHANCE_BATCH = 40   # items per ENHANCE request: a brief per point is longer than a pick
+
+
+def _schema(entries: str, fields: dict) -> dict:
+    """Structured output: the reply is exactly {entries: [{slide, point, **fields}]}, so no commentary can creep in."""
+    entry = {"type": "object", "properties": {"slide": {"type": "integer"}, "point": {"type": "integer"}, **fields},
+             "required": ["slide", "point", *fields], "additionalProperties": False}
+    return {"type": "json_schema", "schema": {"type": "object", "required": [entries], "additionalProperties": False,
+                                              "properties": {entries: {"type": "array", "items": entry}}}}
+
+
+TEXTS = {"type": "array", "items": {"type": "string"}}
+CHOICES = _schema("choices", {"icon": {"type": "string"}, "fit": {"type": "integer"}})
+NEAREST = _schema("options", {"icons": TEXTS})
+BRIEFS = _schema("briefs", {"reads_as": {"type": "string"}, "show": TEXTS})
+
+
+def _enhance(client, items) -> list[str]:
+    """The prompt enhancement: Claude reads every item before picking (item.reads_as, item.show). Items with the
+    same label are read once and share the brief, so a slide repeated to highlight one card reads the same. Without
+    a brief (the request failed), an item is picked from its text alone. Returns notes for the report."""
+    import anthropic
+
+    from .selector import label
+    firsts = {}
+    for i in items:
+        firsts.setdefault(label(i), i)
+
+    def run(batch):
+        try:
+            briefs = _briefs(client, batch)
+        except (anthropic.APIError, ValueError) as e:
+            return len(batch), _failure(e)[0]
+        for i in batch:
+            i.reads_as, i.show = briefs.get(_key(i), ("", []))
+        return None
+
+    with ThreadPoolExecutor(WORKERS) as pool:
+        failed = [r for r in pool.map(run, _batches(list(firsts.values()), ENHANCE_BATCH)) if r]
+    for i in items:
+        first = firsts[label(i)]
+        i.reads_as, i.show = first.reads_as, list(first.show)
+    if not failed:
+        return []
+    reasons = "; ".join(dict.fromkeys(reason for _, reason in failed))
+    return [f"Claude couldn't read {sum(n for n, _ in failed)} items before picking ({reasons}); they were picked "
+            "from their text alone"]
+
+
+def _briefs(client, batch) -> dict:
+    """One ENHANCE request for a batch -> {item key: (reads as, things its icon could show)}."""
+    groups = _groups(batch)
+    data = _reply(_send(client, [{"type": "text", "text": ENHANCE}], _describe(groups), BRIEFS), "briefs")
+    out = {}
+    for c in data["briefs"]:
+        item = _point(groups, c)
+        if item is not None and isinstance(c.get("reads_as"), str):
+            shows = [s.strip()[:60] for s in c.get("show") or [] if isinstance(s, str) and s.strip()]
+            out[_key(item)] = (" ".join(c["reads_as"].split())[:120], shows[:3])
+    return out
+
+
+def _send(client, system, content, form: dict):
+    """One request, its reply in the given structured form; a decline (stop reason "refusal", the fallback model's
+    too) raises Declined."""
+    msg = client.beta.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
+                                      output_config={"effort": config.ANTHROPIC_EFFORT, "format": form},
+                                      betas=[FALLBACK_BETA], fallbacks="default",
+                                      messages=[{"role": "user", "content": content}])
+    if msg.stop_reason == "refusal":   # declined, and so was the fallback: the reply holds nothing to use
+        category = getattr(getattr(msg, "stop_details", None), "category", None)
+        raise Declined(f"it declined them under its {category.replace('_', ' ')} safeguards" if category
+                       else "it declined them")
+    return msg
+
+
+def _reply(msg, entries: str) -> dict:
+    """The JSON object in a reply, holding a list under `entries`."""
+    text = "".join(b.text for b in msg.content if b.type == "text")  # skips thinking blocks on newer models
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < start:
+        raise ValueError(f"no JSON in the reply, stop reason {msg.stop_reason}")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data, dict) or not isinstance(data.get(entries), list):
+        raise ValueError(f"no {entries} in the reply")
+    return data
+
+
+def _point(groups, entry):
+    """The item an entry of the reply is about (its "slide" and "point" numbers), or None."""
+    try:
+        n, p = int(entry["slide"]), int(entry["point"])
+        return groups[n][p] if n >= 0 and p >= 0 else None
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
 
 
 def _label(client, system, batch, notes=None, many=False, fits=None) -> dict:
@@ -244,34 +362,17 @@ def _label(client, system, batch, notes=None, many=False, fits=None) -> dict:
     names, best first}. `fits` collects the fit Claude gave each pick (1-5). A reply cut off at MAX_TOKENS is
     retried as two halves, split between sets where it can be."""
     groups = _groups(batch)
-    msg = client.beta.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
-                                      output_config={"effort": config.ANTHROPIC_EFFORT},
-                                      betas=[FALLBACK_BETA], fallbacks="default",
-                                      messages=[{"role": "user", "content": _describe(groups, notes)}])
-    if msg.stop_reason == "refusal":   # declined, and so was the fallback: the reply holds nothing to use
-        category = getattr(getattr(msg, "stop_details", None), "category", None)
-        raise Declined(f"it declined them under its {category.replace('_', ' ')} safeguards" if category
-                       else "it declined them")
+    msg = _send(client, system, _describe(groups, notes), NEAREST if many else CHOICES)
     if msg.stop_reason == "max_tokens" and len(batch) > 1:
         ends = [sum(len(g) for g in groups[:k]) for k in range(1, len(groups))] or [len(batch) // 2]
         half = min(ends, key=lambda e: abs(e - len(batch) / 2))
         return {**_label(client, system, batch[:half], notes, many, fits),
                 **_label(client, system, batch[half:], notes, many, fits)}
-    text = "".join(b.text for b in msg.content if b.type == "text")  # skips thinking blocks on newer models
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError(f"no JSON in the reply, stop reason {msg.stop_reason}")
-    data = json.loads(text[start:end + 1])
     entries, field = ("options", "icons") if many else ("choices", "icon")
-    if not isinstance(data, dict) or not isinstance(data.get(entries), list):
-        raise ValueError(f"no {entries} in the reply")
+    data = _reply(msg, entries)
     picks = {}
     for c in data[entries]:
-        try:
-            n, p = int(c["slide"]), int(c["point"])
-            item = groups[n][p] if n >= 0 and p >= 0 else None
-        except (KeyError, IndexError, TypeError, ValueError):
-            continue
+        item = _point(groups, c)
         if item is not None:   # a whole library line sent back still names its icon: names have no "|"
             got = c.get(field) if isinstance(c.get(field), list) else [c.get(field)]
             names = [g.split("|")[0].strip() for g in got if isinstance(g, str)]

@@ -14,6 +14,9 @@ ANTHROPIC_EFFORT = os.getenv("ANTHROPIC_EFFORT", "low")
 # How sure Claude must be of an icon to place it: it rates each pick's fit from 1 (a stretch) to 5 (the icon nearly
 # anyone would expect); 3 is a reasonable visual metaphor. Below this, the set is left for a designer to choose.
 MIN_FIT = int(os.getenv("ICON_MIN_FIT", "3"))
+# Prompt enhancement: Claude first reads each card (what it means, what its icon could draw) and picks with that.
+# 0 turns it off: one request fewer per batch, picks from the card's text alone.
+ENHANCE = os.getenv("ICON_ENHANCE", "1") != "0"
 USE_LLM = bool(os.getenv("ANTHROPIC_API_KEY"))  # falls back to keyword matching without a key
 
 # Claude connector (connector.py): the address Claude reaches it at (on Render, the service's own address unless set),
