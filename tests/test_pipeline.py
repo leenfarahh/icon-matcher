@@ -1661,3 +1661,62 @@ def test_claude_reads_each_card_once_before_picking(tmp_path, monkeypatch):
     assert notes == ["Claude couldn't read 2 items before picking (unreadable reply: no JSON in the reply, stop "
                      "reason end_turn); they were picked from their text alone"]
     assert [i.icon_pick for i in items] == ["finance-growth-chart", "people-team"] and not items[0].reads_as
+
+
+# --- slide pictures without PowerPoint: LibreOffice (render.py) --------------------------------------------------
+
+def numbered_deck(path, n=4, hidden=(3,)):
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    for k in range(1, n + 1):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = f"Slide {k}"
+        if k in hidden:
+            slide._element.set("show", "0")
+    prs.save(path)
+
+
+def test_libreoffice_gets_a_copy_of_just_the_wanted_slides_all_shown(tmp_path):
+    from app import render
+    numbered_deck(tmp_path / "deck.pptx")
+    render.only(tmp_path / "deck.pptx", [2, 3], tmp_path / "two.pptx")
+    copy = Presentation(tmp_path / "two.pptx")
+    assert [s.shapes[0].text_frame.text for s in copy.slides] == ["Slide 2", "Slide 3"]
+    assert all(s._element.get("show") is None for s in copy.slides)          # hidden slide 3 is shown in the copy
+    assert len(Presentation(tmp_path / "deck.pptx").slides) == 4              # the deck itself is untouched
+
+
+def test_without_powerpoint_libreoffice_makes_the_pictures(tmp_path, monkeypatch):
+    """LibreOffice turns the copy into a PDF (a stand-in here: it isn't installed on every machine that runs the
+    tests), and each page becomes slide-<n>.png at the asked width. A failed export raises with LibreOffice's reason."""
+    import subprocess
+    import pypdfium2
+    from PIL import Image
+    from app import render
+    numbered_deck(tmp_path / "deck.pptx", n=5)
+    ran = []
+
+    def soffice(command, **kw):
+        ran.append(command)
+        src = Path(command[-1])
+        pdf = pypdfium2.PdfDocument.new()
+        for _ in Presentation(src).slides:
+            pdf.new_page(960, 540)
+        pdf.save(src.with_suffix(".pdf"))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(render, "_powerpoint", lambda: False)
+    monkeypatch.setattr(render, "_soffice", lambda: "soffice")
+    monkeypatch.setattr(render.subprocess, "run", soffice)
+    assert render.available()
+    render.slides(tmp_path / "deck.pptx", [5, 2], tmp_path / "out", 16 / 9, width=320)
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["slide-2.png", "slide-5.png"]
+    assert Image.open(tmp_path / "out" / "slide-5.png").size == (320, 180)
+    assert ran[0][0] == "soffice" and "--headless" in ran[0] and ran[0][1].startswith("-env:UserInstallation=file:")
+
+    monkeypatch.setattr(render.subprocess, "run", lambda command, **kw: subprocess.CompletedProcess(
+        command, 1, "", "Error: source file could not be loaded"))
+    with pytest.raises(RuntimeError, match="source file could not be loaded"):
+        render.slides(tmp_path / "deck.pptx", [2], tmp_path / "out2", 16 / 9)
+    monkeypatch.setattr(render, "_soffice", lambda: None)
+    assert not render.available()

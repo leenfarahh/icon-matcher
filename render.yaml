@@ -3,21 +3,17 @@
 services:
   - type: web
     name: prezlab-icons
-    runtime: python
-    plan: starter           # paid: free instances have no disk and sleep when idle, which loses runs in progress
+    runtime: docker         # the Dockerfile: Python 3.12 plus LibreOffice, for slide pictures; it holds the start command
+    dockerfilePath: ./Dockerfile
+    plan: standard          # 2 GB: LibreOffice needs a few hundred MB while it makes slide pictures (starter: 512 MB)
     region: frankfurt       # where uploaded client decks are processed and kept (up to ICON_RUN_TTL_HOURS)
     branch: main
-    buildCommand: pip install -r requirements.txt
-    # No access log: run links carry their private token in the path.
-    startCommand: uvicorn app.connector:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*' --no-access-log
     healthCheckPath: /health
     disk:                   # one instance with a disk: runs live on it and are processed in this instance
       name: runs
       mountPath: /var/data
       sizeGB: 5
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.10
       - key: ICON_LIBRARY_DIR
         value: ./icons
       - key: ICON_WORK_DIR

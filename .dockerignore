@@ -1,0 +1,7 @@
+.env
+.git/
+.claude/
+jobs/
+tests/
+**/__pycache__/
+*.pyc

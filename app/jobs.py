@@ -113,8 +113,8 @@ _rendering = threading.Lock()
 def slide_picture(job_dir: Path, n: int) -> Path:
     """A picture of a slide with a flagged PL placeholder, from the run's latest deck (the copy with icons when
     there is one), for the review screen. The first request renders all of them in one PowerPoint session; later
-    ones come from the run's cache, which adding icons clears. Without PowerPoint (on Render) there is none, and the
-    page shows the placeholders on a blank slide."""
+    ones come from the run's cache, which adding icons clears. With neither PowerPoint nor LibreOffice there is none,
+    and the page shows the placeholders on a blank slide (render.py)."""
     path = job_dir / PREVIEWS / f"slide-{n}.png"
     if path.exists():
         return path
@@ -123,7 +123,7 @@ def slide_picture(job_dir: Path, n: int) -> Path:
     if n not in wanted:
         raise RunError("no flagged placeholder on that slide", 404)
     if not render.available():
-        raise RunError("slide pictures need PowerPoint on the machine running the tool", 404)
+        raise RunError("slide pictures need PowerPoint or LibreOffice where the tool runs", 404)
     w, h = rep.get("slide_size") or (13.333, 7.5)
     deck = output(job_dir) or job_dir / rep["deck_file"]
     with _rendering:   # parallel requests: the first renders every slide, the rest find theirs done

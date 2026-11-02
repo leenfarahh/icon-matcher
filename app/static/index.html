@@ -723,12 +723,12 @@ function drawReview() {
   const stage = $("#slide");
   if (stage.dataset.shot !== `${slide}:${rv.version}`) {   // a new picture only when the slide or the copy changes
     stage.dataset.shot = `${slide}:${rv.version}`;
-    stage.innerHTML = `<div class="wait">Rendering the flagged slides in PowerPoint. The first one takes a few seconds…</div>
+    stage.innerHTML = `<div class="wait">Making pictures of the flagged slides. The first one can take up to half a minute…</div>
       <img class="shot" hidden alt="Slide ${slide}" src="${U(`jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}`)}">
       <div class="marks"></div>`;
     const shot = stage.querySelector(".shot"), wait = stage.querySelector(".wait");
     shot.onload = () => { shot.hidden = false; wait.hidden = true; };
-    shot.onerror = () => { wait.textContent = "No picture of this slide: PowerPoint isn't available where the tool runs. The placeholders are shown on a blank slide."; };
+    shot.onerror = () => { wait.textContent = "No picture of this slide here (it takes PowerPoint or LibreOffice where the tool runs). The placeholders are shown on a blank slide."; };
   }
   const [W, H] = r.slide_size, pct = (v, of) => `${(100 * v / of).toFixed(3)}%`;
   const at = ([l, t, w, h]) => `left:${pct(l, W)};top:${pct(t, H)};width:${pct(w, W)};height:${pct(h, H)}`;

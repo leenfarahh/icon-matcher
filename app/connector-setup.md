@@ -17,9 +17,11 @@ sign-in, so it lives on Render's free `onrender.com` address: no domain, no DNS 
 
 ## 1. Deploy on Render
 
-`render.yaml` describes the service: Python 3.12, one Starter instance with a 5 GB disk, Frankfurt region. The disk
-keeps sign-ins and runs across restarts and redeploys. A Free instance works for a trial, but it has no disk and
-sleeps after 15 idle minutes: everyone then signs in again, and runs in progress are lost.
+`render.yaml` describes the service: Docker (the `Dockerfile`: Python 3.12 plus LibreOffice, which makes the slide
+pictures for the review screen), one Standard instance (2 GB) with a 5 GB disk, Frankfurt region. The disk keeps
+sign-ins and runs across restarts and redeploys. A Free instance works for a trial, but it has no disk and sleeps after
+15 idle minutes: everyone then signs in again, and runs in progress are lost. On Starter (512 MB), slide pictures of
+large decks can run out of memory.
 
 1. Push this repository to GitHub.
 2. In Render: **New**, **Blueprint**, pick the repository. Render reads `render.yaml` and asks for these. The Odoo
@@ -32,12 +34,17 @@ sleeps after 15 idle minutes: everyone then signs in again, and runs in progress
    | `ODOO_TD_ENCRYPTION_KEY` | A new key: `python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"` |
    | `ANTHROPIC_API_KEY` | The key Claude uses to pick icons; without it, keyword matching (rougher picks) |
 
-   Creating the service by hand (**New**, **Web Service**) instead works too: build command
-   `pip install -r requirements.txt`, the start command from `render.yaml`, a disk mounted at `/var/data`, and the
-   `envVars` from `render.yaml` with the values above.
+   Creating the service by hand (**New**, **Web Service**) instead works too: runtime **Docker**, no build or start
+   command (the `Dockerfile` has them), a disk mounted at `/var/data`, and the `envVars` from `render.yaml` with the
+   values above.
 3. Once it's live, open `https://<service>.onrender.com/health`: it shows the icon count.
 
 The service's address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICON_PUBLIC_URL` only to use another address.
+
+**A service created on the Python runtime** (before slide pictures) moves to Docker in place, keeping its address,
+settings, disk and sign-ins: **Settings**, **Build & Deploy**, **Source**, **Edit**, Runtime **Docker**, Dockerfile
+path `./Dockerfile`, Docker command empty, **Save**; then **Manual Deploy**. The first build takes 5 to 10 minutes
+(it installs LibreOffice); later ones reuse it.
 
 Optional settings (`.env.example` lists them all): `ICON_RUN_TTL_HOURS` (24), `ICON_MAX_DECK_MB` (150),
 `ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
