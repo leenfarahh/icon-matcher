@@ -1,9 +1,10 @@
 # Claude connector: setup
 
 The connector (`app/connector.py`) lets designers run the icon placer from Claude chat, Cowork, Claude Code and the
-Claude add-in for PowerPoint. Claude gives the designer a private upload link, the deck runs on the server, and the
-designer gets a new copy with the icons; the original file is never changed. Flagged placeholders are settled in the
-chat: Claude offers each one's closest icons and adds the designer's picks to a fresh copy.
+Claude add-in for PowerPoint. In Claude web, desktop and mobile it opens a **Prezlab Icons panel** in the conversation:
+the same page as the local test console, for one run. The designer uploads the deck, reviews the picks, chooses icons
+for flagged placeholders on their slides and downloads the new copy, all inside Claude; the original file is never
+changed. Where Claude shows no panel, Claude gives a private link that opens the same page in the browser.
 
 Designers sign in with their **Odoo login**, exactly as in Image Studio, 2FA included. The connector runs its own
 sign-in, so it lives on Render's free `onrender.com` address: no domain, no DNS record, nothing for IT to set up.
@@ -61,11 +62,15 @@ An Owner, in claude.ai: **Organization settings**, **Connectors**, **Add custom 
    in the add-in's Settings, Instructions, add "For icons, use the Prezlab Icons connector", so Claude doesn't
    reach for other icon sources.
 3. **Ask.** For example: "Replace the PL placeholders in this deck with Prezlab icons", "Add Prezlab icons to
-   slides 3 to 6", or "Suggest icons for this deck, don't add them yet". Claude gives an upload link. In
-   PowerPoint, save the deck first, then upload the saved file.
-4. **Download.** The upload page shows progress and then the download. Claude reports what went in and what was
-   flagged, and offers the closest icons for each flagged placeholder; your picks go into a fresh copy at the
-   same link.
+   slides 3 to 6", or "Suggest icons for this deck, don't add them yet". The Prezlab Icons panel opens in the chat.
+   In PowerPoint, save the deck first, then upload the saved file.
+4. **Work in the panel**, as in the local tool: choose the deck, **Run**, review the picks, **Choose flagged icons**
+   (click a highlighted placeholder, then one of its closest icons, a library search result or your own upload),
+   **Add chosen**, **Download deck**. Claude saves the download for you. **Full screen** gives the panel room;
+   **Open in browser** opens the same page in a browser tab. Claude hears what you did in the panel, so you can also
+   ask it about the result or have it choose icons in the chat.
+5. **No panel?** Where Claude shows none (Claude Code, possibly the PowerPoint add-in), Claude gives a link instead:
+   it opens the same page in the browser.
 
 ## Try it locally
 
@@ -89,8 +94,13 @@ without Odoo, set `ICON_MCP_TOKEN` (32+ characters) and add `--header "Authoriza
   connector only; refresh tokens rotate, and a reused one ends that sign-in. To sign everyone out, delete
   `/var/data/runs/auth.sqlite3` and restart the service. Archiving someone in Odoo stops new sign-ins at once; an
   existing sign-in runs out within 30 days.
-- **Runs.** A run belongs to the designer who started it: no one else's Claude can read or change it. The upload page
-  and download sit behind a private link, unique to the run, so it shouldn't be pasted anywhere shared.
+- **Runs.** A run belongs to the designer who started it: no one else's Claude can read or change it. The page and
+  everything it reaches (the deck upload, the results, the download) sit behind a private link, unique to the run, so
+  it shouldn't be pasted anywhere shared. The panel calls that link straight from the designer's browser; the
+  connector answers only Claude's panel origin (`*.claudemcpcontent.com`) and its own pages, and the panel may reach
+  no other server (its declared CSP).
+- **Library.** The panel's Library tab reads the library; adding and editing icons stays in the local tool, since
+  changes on Render would be lost at the next deploy.
 - **Retention.** The uploaded deck, its copy and the link are deleted after `ICON_RUN_TTL_HOURS` (24 hours by
   default; checked hourly). They sit on the Render disk in Frankfurt until then. Confirm that region with whoever
   owns Prezlab's data policy before client decks go through it.
@@ -105,5 +115,7 @@ without Odoo, set `ICON_MCP_TOKEN` (32+ characters) and add `--header "Authoriza
 - One instance: runs and sign-ins live on its disk, and decks are processed there, two at a time.
 - The Odoo 2FA step drives Odoo's login pages, as Image Studio does, so an Odoo upgrade that changes them can break
   it for 2FA users until `app/odoo.py` is updated; the sign-in page then says so.
-- Flagged placeholders are chosen in the chat, by what each icon draws. Slide pictures need PowerPoint on the server,
-  so the hosted connector has none (the local test UI does).
+- Slide pictures need PowerPoint on the server, so on Render the review shows the flagged placeholders on a blank
+  slide (the local test UI shows the real slide).
+- An inline panel has a height limit; long results fit better in **Full screen**.
+- The panel's client is vendored (`app/static/vendor/`, MCP Apps 1.7.5); updating it is a file copy (see its README).

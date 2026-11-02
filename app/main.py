@@ -1,18 +1,14 @@
 """HTTP API and test UI. Run from the project root: uvicorn app.main:app --reload, then open http://127.0.0.1:8000"""
-import hashlib
 import re
 import shutil
-import threading
 import uuid
-from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from . import config, jobs, library_edit, render
-from .icon_tools import recolor_svg
+from . import config, jobs, library_edit
 from .library import Library
 
 app = FastAPI(title="Icon Placer")
@@ -34,9 +30,7 @@ def health():
 @app.get("/library")
 def library_index():
     """Every icon of any status (each carries its status); the concept map covers approved icons only."""
-    return {"icons": [asdict(i) for i in library.all.values()], "concept_map": library.concept_map,
-            "warnings": library.warnings, "indexed_from_filenames": library.indexed_from_filenames,
-            "llm": config.USE_LLM}
+    return jobs.library_index(library)
 
 
 @app.post("/library/preview")
@@ -87,13 +81,7 @@ def icon_svg(icon_id: str, color: str = ""):
     icon = library.all.get(icon_id)
     if not icon:
         raise HTTPException(404, "unknown icon")
-    return _svg(library.svg_bytes(icon), color)
-
-
-def _svg(svg: bytes, color: str = "") -> Response:
-    if re.fullmatch(r"[0-9A-Fa-f]{6}", color):
-        svg = recolor_svg(svg, color)
-    return Response(svg, media_type="image/svg+xml")
+    return Response(jobs.icon_svg(library.svg_bytes(icon), color), media_type="image/svg+xml")
 
 
 @app.post("/jobs")
@@ -144,14 +132,10 @@ def apply_suggestions(job: str, req: ApplyRequest):
 async def upload_icon(job: str, file: UploadFile = File(...)):
     """An icon a designer brings for a placeholder in this deck: an SVG, or a PNG/JPG/WebP/GIF/BMP traced into
     one, with the same checks as the library. Kept with the run, not added to the library."""
-    job_dir = _job_dir(job)
-    svg, errors, warnings, source_format = library_edit.prepare_upload(await file.read())
-    if errors:
-        raise HTTPException(400, errors)
-    digest = hashlib.sha1(svg).hexdigest()[:12]
-    (job_dir / jobs.UPLOADS).mkdir(exist_ok=True)
-    (job_dir / jobs.UPLOADS / f"{digest}.svg").write_bytes(svg)
-    return {"id": f"upload:{digest}", "name": file.filename, "warnings": warnings, "source_format": source_format}
+    try:
+        return jobs.save_upload(_job_dir(job), await file.read(), file.filename)
+    except jobs.RunError as e:
+        raise HTTPException(e.status, e.detail)
 
 
 @app.get("/jobs/{job}/uploads/{digest}.svg")
@@ -159,34 +143,16 @@ def uploaded_svg(job: str, digest: str, color: str = ""):
     path = jobs.upload_path(_job_dir(job), f"upload:{digest}")
     if path is None or not path.exists():
         raise HTTPException(404, "no such upload")
-    return _svg(path.read_bytes(), color)
-
-
-_rendering = threading.Lock()
+    return Response(jobs.icon_svg(path.read_bytes(), color), media_type="image/svg+xml")
 
 
 @app.get("/jobs/{job}/slides/{n}.png")
 def slide_picture(job: str, n: int):
-    """A picture of a slide with a flagged PL placeholder, from the run's latest deck (the copy with icons when
-    there is one), for the review screen. The first request renders all of them in one PowerPoint session;
-    later ones come from the job's cache, which adding icons clears."""
-    job_dir = _job_dir(job)
-    path = job_dir / jobs.PREVIEWS / f"slide-{n}.png"
-    if not path.exists():
-        saved = jobs.saved(job_dir)
-        wanted = sorted({f["item"]["slide"] for f in saved.get("flags", []) if f.get("spot")})
-        if n not in wanted:
-            raise HTTPException(404, "no flagged placeholder on that slide")
-        if not render.available():
-            raise HTTPException(404, "slide pictures need PowerPoint on the machine running the tool")
-        w, h = saved.get("slide_size") or (13.333, 7.5)
-        deck = jobs.output(job_dir) or job_dir / saved["deck_file"]
-        with _rendering:   # parallel requests: the first renders every slide, the rest find theirs done
-            if not path.exists():
-                try:
-                    render.slides(deck, wanted, job_dir / jobs.PREVIEWS, w / h)
-                except RuntimeError as e:
-                    raise HTTPException(503, str(e))
+    """A picture of a slide with a flagged PL placeholder (jobs.slide_picture), for the review screen."""
+    try:
+        path = jobs.slide_picture(_job_dir(job), n)
+    except jobs.RunError as e:
+        raise HTTPException(e.status, e.detail)
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
@@ -197,5 +163,5 @@ def download(job: str):
         raise HTTPException(404, "no output for this job")
     return FileResponse(out, filename=out.name)
 
-# Claude (chat and the PowerPoint add-in) reaches the same runs through the connector (connector.py), which has
-# sign-in and job cleanup. This test UI has neither: keep it on 127.0.0.1.
+# Claude (chat and the PowerPoint add-in) shows this same page, one run at a time, through the connector
+# (connector.py), which has sign-in and job cleanup. This test UI has neither: keep it on 127.0.0.1.

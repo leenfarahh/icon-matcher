@@ -1,11 +1,16 @@
 """Saved runs: one folder per run under WORK_DIR holding the deck, its report and the icons designers uploaded for it.
-Shared by the test UI (main.py) and the Claude connector (connector.py), so both add chosen icons the same way."""
+Shared by the test UI (main.py) and the Claude connector (connector.py), which serve the same page (static/index.html),
+so both run decks, preview icons and add chosen icons the same way."""
+import hashlib
 import json
 import re
 import shutil
+import threading
+from dataclasses import asdict
 from pathlib import Path
 
-from . import pipeline, report
+from . import config, library_edit, pipeline, render, report
+from .icon_tools import recolor_svg
 from .library import Library
 
 SAVED_REPORT = "report.json"
@@ -15,11 +20,12 @@ UPLOAD_ID = re.compile(r"upload:([0-9a-f]{12})")   # library ids are lowercase w
 
 
 class RunError(ValueError):
-    """A request the run can't take, with the reason in words a designer understands. status: the HTTP status."""
+    """A request the run can't take, with the reason in words a designer understands (or a list of them, from an
+    icon's checks). status: the HTTP status."""
 
-    def __init__(self, message: str, status: int = 400):
-        super().__init__(message)
-        self.status = status
+    def __init__(self, message: str | list[str], status: int = 400):
+        super().__init__(message if isinstance(message, str) else "; ".join(message))
+        self.detail, self.status = message, status
 
 
 def run(job_dir: Path, deck_file: str, library: Library, mode: str, slides: list[int] | None) -> dict:
@@ -74,3 +80,56 @@ def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, 
     out, skipped = pipeline.insert(job_dir / rep["deck_file"], library, placements, rep["settings"])
     shutil.rmtree(job_dir / PREVIEWS, ignore_errors=True)   # slide pictures now show the new copy
     return {"added": len(placements) - len(skipped), "skipped": skipped, "output_file": out.name}
+
+
+def library_index(library: Library) -> dict:
+    """The page's Library tab: every icon of any status (each carries its status); the concept map covers approved
+    icons only."""
+    return {"icons": [asdict(i) for i in library.all.values()], "concept_map": library.concept_map,
+            "warnings": library.warnings, "indexed_from_filenames": library.indexed_from_filenames,
+            "llm": config.USE_LLM}
+
+
+def icon_svg(svg: bytes, color: str = "") -> bytes:
+    """An icon's SVG; with color (a hex such as FD5108), recolored as it would be in a deck (for previews)."""
+    return recolor_svg(svg, color) if re.fullmatch(r"[0-9A-Fa-f]{6}", color) else svg
+
+
+def save_upload(job_dir: Path, data: bytes, filename: str) -> dict:
+    """An icon a designer brings for a placeholder in this deck: an SVG, or a PNG/JPG/WebP/GIF/BMP traced into one,
+    with the same checks as the library. Kept with the run, not added to the library."""
+    svg, errors, warnings, source_format = library_edit.prepare_upload(data)
+    if errors:
+        raise RunError(errors)
+    digest = hashlib.sha1(svg).hexdigest()[:12]
+    (job_dir / UPLOADS).mkdir(exist_ok=True)
+    (job_dir / UPLOADS / f"{digest}.svg").write_bytes(svg)
+    return {"id": f"upload:{digest}", "name": filename, "warnings": warnings, "source_format": source_format}
+
+
+_rendering = threading.Lock()
+
+
+def slide_picture(job_dir: Path, n: int) -> Path:
+    """A picture of a slide with a flagged PL placeholder, from the run's latest deck (the copy with icons when
+    there is one), for the review screen. The first request renders all of them in one PowerPoint session; later
+    ones come from the run's cache, which adding icons clears. Without PowerPoint (on Render) there is none, and the
+    page shows the placeholders on a blank slide."""
+    path = job_dir / PREVIEWS / f"slide-{n}.png"
+    if path.exists():
+        return path
+    rep = saved(job_dir)
+    wanted = sorted({f["item"]["slide"] for f in rep.get("flags", []) if f.get("spot")})
+    if n not in wanted:
+        raise RunError("no flagged placeholder on that slide", 404)
+    if not render.available():
+        raise RunError("slide pictures need PowerPoint on the machine running the tool", 404)
+    w, h = rep.get("slide_size") or (13.333, 7.5)
+    deck = output(job_dir) or job_dir / rep["deck_file"]
+    with _rendering:   # parallel requests: the first renders every slide, the rest find theirs done
+        if not path.exists():
+            try:
+                render.slides(deck, wanted, job_dir / PREVIEWS, w / h)
+            except RuntimeError as e:
+                raise RunError(str(e), 503)
+    return path

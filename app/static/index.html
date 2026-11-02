@@ -130,6 +130,7 @@
   td.tick input, th.tick input { width: 16px; height: 16px; cursor: pointer; }
   .card.retired { opacity: .7; }
   [hidden] { display: none !important; }
+  .hosted .edit-only { display: none !important; }   /* the library is edited locally only */
 </style>
 </head>
 <body>
@@ -177,10 +178,10 @@
         </select>
       </label>
       <span id="count" class="note"></span>
-      <button class="primary" id="add-open" type="button">Add icon</button>
+      <button class="primary edit-only" id="add-open" type="button">Add icon</button>
     </div>
 
-    <form id="add" class="panel" hidden>
+    <form id="add" class="panel edit-only" hidden>
       <h2 id="form-title">Add an icon to the library</h2>
       <p class="note" style="margin:0" id="edit-intro" hidden>The ID and file can't change: decks and other icons refer to them. To retire the icon, set Status to deprecated.</p>
       <p class="note" style="margin:0" id="add-intro">Saved as <span class="mono">&lt;id&gt;.svg</span> in the library folder and added to icons.json. PNG, JPG and other images are traced into a one-color SVG; the original is kept in <span class="mono">originals/</span>. Fields marked * are required. Separate list items with ; or ,</p>
@@ -228,29 +229,43 @@
   </section>
 </main>
 
+<!-- HOST -->
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-const img = (id, px) => `<img class="ic" src="icons/${encodeURIComponent(id)}.svg" width="${px}" height="${px}" alt="${esc(id)}">`;
+// Hosted by the connector (connector.py puts window.HOST in place of the HOST marker above): inside Claude's panel or
+// at a run's private link. Every address then goes to that run (HOST.base, once HOST.ready), library editing is
+// hidden, and the run's latest result comes back when the page opens. Locally there is no HOST and nothing changes.
+const HOST = window.HOST;
+const U = path => (HOST ? HOST.base : "") + path;
+if (HOST) {
+  document.documentElement.classList.add("hosted");
+  document.title = $("header h1").textContent = "Prezlab Icons";
+}
+const img = (id, px) => `<img class="ic" src="${U(`icons/${encodeURIComponent(id)}.svg`)}" width="${px}" height="${px}" alt="${esc(id)}">`;
 const chips = (list, cls = "") => (list || []).map(t => `<span class="chip ${cls}">${esc(t)}</span>`).join("");
 let lib = {icons: [], concept_map: {}};
 
 // tabs (#library deep-links to the library tab)
 function show(tab) {
-  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll("nav button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
   $("#tab-run").hidden = tab !== "run";
   $("#tab-library").hidden = tab !== "library";
-  history.replaceState(null, "", tab === "library" ? "#library" : location.pathname);
+  if (!HOST) history.replaceState(null, "", tab === "library" ? "#library" : location.pathname);
 }
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => show(b.dataset.tab));
+document.querySelectorAll("nav button[data-tab]").forEach(b => b.onclick = () => show(b.dataset.tab));
 
 // library
 async function loadLibrary() {
   try {
-    const r = await fetch("library");
+    const r = await fetch(U("library"));
+    if (!r.ok) throw new Error(r.status === 404 ? "gone" : `Server error ${r.status}`);
     lib = await r.json();
   } catch (e) {
-    $("#status").textContent = "Library not reachable: is the server running?";
+    $("#status").textContent = !HOST ? "Library not reachable: is the server running?"
+      : e.message === "gone" ? "This run has expired (runs last 24 hours). Ask Claude to start a new one."
+      : "Prezlab Icons isn't reachable right now. Try again in a moment.";
+    $("#run button").disabled = !!HOST;
     return;
   }
   const warn = lib.warnings.length ? ` · ${lib.warnings.length} warnings` : "";
@@ -288,7 +303,7 @@ function renderLibrary() {
     <div class="card${i.status === "approved" ? "" : " retired"}">
       <div class="top">${img(i.id, 44)}
         <div><div class="id">${esc(i.id)}</div><div class="note" style="margin:0">${esc(i.description)}</div></div>
-        <button class="secondary small" type="button" data-edit="${esc(i.id)}">Edit</button>
+        <button class="secondary small edit-only" type="button" data-edit="${esc(i.id)}">Edit</button>
       </div>
       <div class="ar">${esc(i.description_ar)}</div>
       <div style="margin:8px 0">
@@ -452,7 +467,7 @@ addForm.onsubmit = async e => {
 };
 
 // deep links: #library opens the library, #add-icon opens the add form
-const startHash = location.hash;  // read once: show() rewrites the hash
+const startHash = HOST ? "" : location.hash;  // read once: show() rewrites the hash
 if (startHash === "#library" || startHash === "#add-icon") show("library");
 if (startHash === "#add-icon") openForm(null);
 
@@ -463,10 +478,11 @@ $("#run").onsubmit = async e => {
   btn.disabled = true; btn.textContent = "Running…";
   $("#out").innerHTML = "";
   try {
-    const res = await fetch("jobs", {method: "POST", body: new FormData(e.target)});
+    const res = await fetch(U("jobs"), {method: "POST", body: new FormData(e.target)});
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error((body && body.detail) || `Server error ${res.status}`);
     renderResult(body);
+    if (HOST && HOST.ran) HOST.ran(body);
   } catch (err) {
     $("#out").innerHTML = `<div class="panel"><div class="err">${esc(err.message)}</div></div>`;
   } finally {
@@ -491,7 +507,7 @@ function renderResult(r) {
       <span class="note" style="margin:0">Tiers: ${esc(tiers)}</span>
       <span class="summary-actions">
         ${open.length ? `<button class="secondary" type="button" id="go-review">Choose flagged icons (${open.length})</button>` : ""}
-        ${r.output_file ? `<a class="dl" href="jobs/${encodeURIComponent(r.job)}/download"><button class="primary" type="button">Download deck</button></a>` : ""}
+        ${r.output_file ? `<a class="dl" href="${U(`jobs/${encodeURIComponent(r.job)}/download`)}"><button class="primary" type="button">Download deck</button></a>` : ""}
       </span>
     </div>`;
 
@@ -545,6 +561,7 @@ function renderResult(r) {
       ${r.gaps.map(g => `<div>${esc(g)}</div>`).join("")}`);
 
   $("#out").innerHTML = summary + picks + review + flags + notes;
+  if (HOST) HOST.output = r.output_file;   // the file name a download inside Claude gets
   choices = {};
   rv = null;
   wireApply(r);
@@ -638,9 +655,9 @@ function choose(id) {   // the same icon again, or "No icon", clears the choice
 }
 
 // an icon is a library id, or "upload:<id>" for one the designer uploaded to this run
-const iconSrc = (id, color = "") => (id.startsWith("upload:")
+const iconSrc = (id, color = "") => U((id.startsWith("upload:")
   ? `jobs/${encodeURIComponent(rv.r.job)}/uploads/${encodeURIComponent(id.slice(7))}.svg`
-  : `icons/${encodeURIComponent(id)}.svg`) + (color ? `?color=${encodeURIComponent(color)}` : "");
+  : `icons/${encodeURIComponent(id)}.svg`) + (color ? `?color=${encodeURIComponent(color)}` : ""));
 const nameOf = id => (rv.uploads.find(u => u.id === id) || {}).name || id;
 const tile = id => `<button type="button" class="tile${choices[rv.sel] === id ? " on" : ""}" data-icon="${esc(id)}"
     aria-pressed="${choices[rv.sel] === id}"><img class="ic" src="${iconSrc(id)}" width="36" height="36" alt="">
@@ -653,7 +670,7 @@ async function uploadIcon(file) {   // checked like a library upload, kept with 
   try {
     const body = new FormData();
     body.append("file", file);
-    const res = await fetch(`jobs/${encodeURIComponent(rv.r.job)}/uploads`, {method: "POST", body});
+    const res = await fetch(U(`jobs/${encodeURIComponent(rv.r.job)}/uploads`), {method: "POST", body});
     const out = await res.json().catch(() => null);
     if (!res.ok) {
       const d = out && out.detail;
@@ -700,7 +717,7 @@ function drawReview() {
   if (stage.dataset.shot !== `${slide}:${rv.version}`) {   // a new picture only when the slide or the copy changes
     stage.dataset.shot = `${slide}:${rv.version}`;
     stage.innerHTML = `<div class="wait">Rendering the flagged slides in PowerPoint. The first one takes a few seconds…</div>
-      <img class="shot" hidden alt="Slide ${slide}" src="jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}">
+      <img class="shot" hidden alt="Slide ${slide}" src="${U(`jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}`)}">
       <div class="marks"></div>`;
     const shot = stage.querySelector(".shot"), wait = stage.querySelector(".wait");
     shot.onload = () => { shot.hidden = false; wait.hidden = true; };
@@ -747,7 +764,7 @@ async function apply(r, indices, choices, msg, sync) {
   const count = indices.length + Object.keys(choices).length;
   msg.innerHTML = `<div class="note">Adding ${count} icon${count === 1 ? "" : "s"} to a copy of the deck…</div>`;
   try {
-    const res = await fetch(`jobs/${encodeURIComponent(r.job)}/apply`,
+    const res = await fetch(U(`jobs/${encodeURIComponent(r.job)}/apply`),
       {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({picks: indices, choices})});
     const body = await res.json().catch(() => null);
     if (!res.ok) {
@@ -758,7 +775,11 @@ async function apply(r, indices, choices, msg, sync) {
       ? `<ul><li>Skipped ${body.skipped.length}: no longer approved in the library (${esc(body.skipped.join(", "))}).</li></ul>` : "";
     msg.innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
         to ${esc(body.output_file)}. The copy holds exactly these icons.</span>
-        <a href="${esc(body.download)}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>`;
+        <a href="${esc(U(body.download))}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>`;
+    if (HOST) {
+      HOST.output = body.output_file;
+      if (HOST.applied) HOST.applied(body);
+    }
     if (rv) {   // the slide pictures now show the new copy, chosen icons included
       applied = {...choices};
       rv.version++;
@@ -772,7 +793,24 @@ async function apply(r, indices, choices, msg, sync) {
   }
 }
 
-loadLibrary();
+// Inside Claude's panel, downloads go through Claude: a panel can't save files itself.
+if (HOST && HOST.download) document.addEventListener("click", e => {
+  const a = e.target.closest("a[href]");
+  if (a) { e.preventDefault(); HOST.download(a.href); }
+});
+
+async function restore() {   // hosted: the mode and slides Claude set for this run, and its latest result
+  try {
+    const res = await fetch(U("state"));
+    if (!res.ok) return;
+    const s = await res.json();
+    $("#run").elements.mode.value = s.mode;
+    $("#run").elements.slides.value = s.slides;
+    if (s.result) renderResult(s.result);
+  } catch (e) { /* the form still works */ }
+}
+
+(HOST ? HOST.ready : Promise.resolve()).then(loadLibrary).then(() => HOST && restore());
 </script>
 </body>
 </html>
