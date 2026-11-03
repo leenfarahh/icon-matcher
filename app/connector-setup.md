@@ -70,8 +70,8 @@ designers to sign in.
 
 **Let attached decks through.** Claude sends a deck attached to the message from its code execution sandbox, which
 reaches only the domains the organization allows. **Organization settings**, **Capabilities**, code execution's
-network access: allow specific domains and add `<service>.onrender.com`. Without it, Claude says the deck didn't come
-through and designers choose it in the panel instead.
+network access: allow specific domains and add `<service>.onrender.com`. Without it, the panel still opens, Claude
+says the deck didn't come through, and designers choose it in the panel instead.
 
 ## 3. Designers
 
@@ -80,9 +80,9 @@ through and designers choose it in the panel instead.
    in the add-in's Settings, Instructions, add "For icons, use the Prezlab Icons connector", so Claude doesn't
    reach for other icon sources.
 3. **Attach the deck and ask.** For example: "Replace the PL placeholders in this deck with Prezlab icons", "Add
-   Prezlab icons to slides 3 to 6", or "Suggest icons for this deck, don't add them yet". The Prezlab Icons panel
-   opens in the chat with the deck in it (a few seconds after the panel, while Claude sends it). Without an
-   attachment, choose the deck in the panel. In PowerPoint, save the deck first, then upload the saved file.
+   Prezlab icons to slides 3 to 6", or "Suggest icons for this deck, don't add them yet". Claude sends the deck,
+   then opens the Prezlab Icons panel in the chat with the deck in it. Without an attachment (or if it didn't come
+   through), choose the deck in the panel. In PowerPoint, save the deck first, then upload the saved file.
 4. **Work in the panel**, as in the local tool: check the mode, **Run**, review the picks, **Choose flagged icons**
    (click a highlighted placeholder, then one of its closest icons, a library search result or your own upload),
    **Add chosen**, **Download deck**. Claude saves the download for you. **Full screen** gives the panel room;

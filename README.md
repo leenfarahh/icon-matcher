@@ -24,7 +24,7 @@ PowerPoint. `start_icon_run` opens the **Prezlab Icons panel** in the conversati
 (`app/static/index.html`) for one run, against that run's private endpoints, with the bridge to Claude in
 `app/static/panel.js`. Where Claude shows no panel, the run's private link opens the same page in the browser. Decks
 never pass through the chat: a deck attached to the message is sent by Claude from its code tools straight to the run
-(`start_icon_run`'s `attached_deck`), so the panel has it ready. `get_icon_run` reports the picks and flags,
+(`send_attached_deck`, before `start_icon_run` opens the panel), so the panel opens with it. `get_icon_run` reports the picks and flags,
 `choose_icons` writes a fresh copy from the chat, and `search_icons` looks up the library. Designers don't sign in:
 the hosted connector's address carries a secret (`/mcp/<ICON_MCP_SECRET>`, `app/auth.py`), so it runs on Render's own
 address with no domain. A run's deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the

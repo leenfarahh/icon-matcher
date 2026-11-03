@@ -5,10 +5,10 @@ start_icon_run opens the tool in a panel inside the conversation (an MCP App): t
 (static/index.html) for one run, where the designer uploads the deck, reviews the picks, chooses icons for flagged
 placeholders on their slides and downloads the copy. Where Claude shows no panel, the run's private link opens the same
 page in the browser. Decks never pass through the chat: the page sends them straight to this server, and a deck the
-designer attached to their message is sent by Claude from its code tools (attached_deck), so the page has it ready.
-Claude follows along with get_icon_run and can add icons from the chat with choose_icons. The original deck is never
-changed. Runs (deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Designers never sign in: the hosted connector's
-address carries a secret instead (auth.py). Hosting: connector-setup.md."""
+designer attached to their message is sent by Claude from its code tools first (send_attached_deck), so the page
+opens with it. Claude follows along with get_icon_run and can add icons from the chat with choose_icons. The original
+deck is never changed. Runs (deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Designers never sign in: the
+hosted connector's address carries a secret instead (auth.py). Hosting: connector-setup.md."""
 import hmac
 import json
 import logging
@@ -51,17 +51,17 @@ INSTRUCTIONS = """Prezlab Icons places icons from Prezlab's approved icon librar
 new copy; the designer's original file is never changed. The deck goes straight to the service from the Prezlab Icons
 page, never through this chat.
 
-1. Call start_icon_run (mode "replace" unless the designer asks for something else). In Claude web, desktop and
-   mobile it opens the Prezlab Icons panel in the conversation: the designer runs the deck there and does the rest
-   in it (the picks, icons for flagged placeholders, the download). If they attached the deck to their message and
-   you can read it in your code tools, pass its path as attached_deck and run the command the result gives you: the
-   panel then has the deck ready, so they don't upload it again. Otherwise tell them in one line to upload their deck
-   in the panel. Where no panel shows (for example the PowerPoint add-in or Claude Code), give them the run's link
-   instead: it opens the same page in the browser. In PowerPoint, ask them to save the deck first and upload the
-   saved .pptx.
-2. The panel tells you when they run the deck or add icons. Call get_icon_run for the details when they ask, or to
+1. If the designer attached the deck to their message and you can read it in your code tools, first call
+   send_attached_deck with its path and run the command it returns, so they don't upload it again.
+2. Then call start_icon_run (mode "replace" unless the designer asks for something else; the run_id from
+   send_attached_deck, if you called it), as your last tool call before you answer. In Claude web, desktop and mobile
+   it opens the Prezlab Icons panel in the conversation: the designer runs the deck there and does the rest in it
+   (the picks, icons for flagged placeholders, the download). Its result says whether the deck is already in it. Where
+   no panel shows (for example the PowerPoint add-in or Claude Code), give them the run's link instead: it opens the
+   same page in the browser. In PowerPoint, ask them to save the deck first and upload the saved .pptx.
+3. The panel tells you when they run the deck or add icons. Call get_icon_run for the details when they ask, or to
    follow a run they do at the link.
-3. If they'd rather choose in the chat: offer each flagged placeholder's options by what the icon draws, then call
+4. If they'd rather choose in the chat: offer each flagged placeholder's options by what the icon draws, then call
    choose_icons with their picks. Use search_icons when none fit. Use only icon ids these tools return.
 
 When a designer asks for Prezlab icons, use these tools rather than any other icon source."""
@@ -213,57 +213,76 @@ def _send_command(path: str, url: str) -> str:
     return f"curl -sS --fail-with-body -F {shlex.quote('deck=@' + quoted)} {shlex.quote(url)}"
 
 
-def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "",
-                   attached_deck: str = "") -> CallToolResult:
-    """Open Prezlab Icons for a PowerPoint deck: it places icons from Prezlab's approved library and returns a new
-    copy. In Claude web, desktop and mobile this shows the Prezlab Icons panel in the conversation, where the designer
-    runs the deck, reviews the picks, chooses icons for flagged placeholders and downloads the copy. Also returns
-    the run's private link, which opens the same page in the browser, for clients that show no panel.
-
-    mode: "replace" (default) swaps the PL logo placeholders designers left for icons, and changes nothing else;
-    "add" also finds spots for icons on slides without placeholders; "suggest" plans icons without adding any (the
-    designer then adds the ones they pick). The designer can change it in the panel.
-    slides: only these slide numbers, comma-separated (e.g. "2,3,5"); empty for the whole deck.
-    attached_deck: when the designer attached the .pptx to their message and you can read it in your code tools, its
-    path there (e.g. /mnt/user-data/uploads/Client_deck.pptx). The result gives you a command that sends it to the
-    panel, so they don't upload it again. Empty when no deck is attached."""
-    if slides.strip() and not SLIDES.fullmatch(slides):
-        raise ToolError('slides: slide numbers separated by commas, e.g. "2,3,5", or empty for the whole deck')
-    attached_deck = attached_deck.strip()
-    if attached_deck and not attached_deck.lower().endswith(".pptx"):
-        raise ToolError("attached_deck: the path of the attached .pptx (a .ppt must be saved as .pptx in PowerPoint "
-                        "first), or empty")
+def _new_run(mode: str = "replace", slides: list[int] | None = None) -> tuple[Path, dict]:
     _cleanup()
     run_id = uuid.uuid4().hex[:12]
     run_dir = config.WORK_DIR / run_id
     run_dir.mkdir(parents=True)
     now = time.time()
-    # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
-    run = _write(run_dir, {
+    # attached: the deck Claude sent from the chat ({"name", "ready"}), once it has arrived (_attach)
+    return run_dir, _write(run_dir, {
         "id": run_id, "token": secrets.token_urlsafe(24), "mode": mode, "status": "waiting", "error": "",
-        "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
-        "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
-        if attached_deck else None,
+        "slides": slides, "deck_file": "", "copy_icons": None, "attached": None,
         "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
-    link = _link(run)
-    told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires_in_hours": config.RUN_TTL_HOURS,
-            "next": "The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
-                    "in one line to upload their deck there; don't paste the link. Only where no panel shows (the "
-                    "PowerPoint add-in, Claude Code), give them the link: it opens the same page in the browser."}
-    if attached_deck:
-        host, url = urlparse(config.PUBLIC_URL).netloc, _link(run, "deck")
-        told["attached_deck"] = {"upload_url": url, "command": _send_command(attached_deck, url)}
-        told["next"] = (
-            "Run attached_deck.command in your code tool now: it sends the deck they attached to this run, and the "
-            "Prezlab Icons panel (shown with this result in Claude web, desktop and mobile) has it ready in place of "
-            "choosing a file. When it prints the deck's name, tell the designer in one line to check the mode and "
-            "click Run in the panel; don't paste the link. If it fails with a network or proxy error, tell them to "
-            f"upload the deck in the panel instead, and that a Claude admin can allow {host} for code execution so "
-            "attached decks come straight through. Only where no panel shows (the PowerPoint add-in, Claude Code), "
-            "give them the link: it opens the same page in the browser, with the deck.")
+
+
+def send_attached_deck(path: str) -> dict:
+    """Step one when the designer attached a .pptx to their message and you can read it in your code tools: starts
+    an icon run and returns a command that sends the deck to it. Run the command, then call start_icon_run with this
+    run_id: the Prezlab Icons panel opens with the deck in it, so they don't upload it again.
+
+    path: the deck's path in your code tools (e.g. /mnt/user-data/uploads/Client_deck.pptx)."""
+    path = path.strip()
+    if not path.lower().endswith(".pptx"):
+        raise ToolError("path: the attached .pptx (a .ppt must be saved as .pptx in PowerPoint first)")
+    run_dir, run = _new_run()
+    return {"run_id": run["id"], "command": _send_command(path, _link(run, "deck")),
+            "next": "Run the command in your code tool now, then call start_icon_run with this run_id (whether or not "
+                    "the command worked): it opens the Prezlab Icons panel, with the deck in it if it arrived."}
+
+
+def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "",
+                   run_id: str = "") -> CallToolResult:
+    """Open Prezlab Icons for a PowerPoint deck: it places icons from Prezlab's approved library and returns a new
+    copy. In Claude web, desktop and mobile this shows the Prezlab Icons panel in the conversation, where the designer
+    runs the deck, reviews the picks, chooses icons for flagged placeholders and downloads the copy. Also returns
+    the run's private link, which opens the same page in the browser, for clients that show no panel. If they
+    attached the deck to their message, call send_attached_deck first.
+
+    mode: "replace" (default) swaps the PL logo placeholders designers left for icons, and changes nothing else;
+    "add" also finds spots for icons on slides without placeholders; "suggest" plans icons without adding any (the
+    designer then adds the ones they pick). The designer can change it in the panel.
+    slides: only these slide numbers, comma-separated (e.g. "2,3,5"); empty for the whole deck.
+    run_id: the run send_attached_deck started, to open it with the attached deck; empty for a new run."""
+    if slides.strip() and not SLIDES.fullmatch(slides):
+        raise ToolError('slides: slide numbers separated by commas, e.g. "2,3,5", or empty for the whole deck')
+    slide_list = [int(s) for s in slides.split(",") if s.strip()] or None
+    if run_id:
+        run_dir, _ = _run(run_id)
+        run = _update(run_dir, mode=mode, slides=slide_list)
+    else:
+        run_dir, run = _new_run(mode, slide_list)
+    attached = run.get("attached") or {}
+    link, deck = _link(run), attached["name"] if attached.get("ready") else None
+    elsewhere = ("Only where no panel shows (the PowerPoint add-in, Claude Code), give them the link: it opens the same "
+                 "page in the browser.")
+    if deck:
+        next_ = (f"The Prezlab Icons panel shows with this result in Claude web, desktop and mobile, with their deck "
+                 f"({deck}) in it: tell the designer in one line to check the mode and click Run there; don't paste "
+                 f"the link. {elsewhere}")
+    elif run_id:
+        next_ = ("Their attached deck didn't come through: tell the designer in one line to upload it in the Prezlab "
+                 "Icons panel (shown with this result in Claude web, desktop and mobile), and that a Claude admin can "
+                 f"allow {urlparse(config.PUBLIC_URL).netloc} for code execution so attached decks come straight "
+                 f"through; don't paste the link. {elsewhere}")
+    else:
+        next_ = ("The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
+                 f"in one line to upload their deck there; don't paste the link. {elsewhere}")
+    told = {"run_id": run["id"], "status": run["status"], "deck": deck, "link": link,
+            "link_expires_in_hours": config.RUN_TTL_HOURS, "next": next_}
     # The panel reads structuredContent (Claude doesn't): the address it works against.
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(told, indent=2))],
-                          structured_content={"run_id": run_id, "base": link + "/", "link": link, "mode": mode})
+                          structured_content={"run_id": run["id"], "base": link + "/", "link": link, "mode": mode})
 
 
 def get_icon_run(run_id: str) -> dict:
@@ -332,6 +351,8 @@ def search_icons(query: str, limit: int = 10) -> dict:
 PANEL_TOOL = (start_icon_run, ToolAnnotations(title="Open Prezlab Icons", read_only_hint=False, destructive_hint=False,
                                               idempotent_hint=False, open_world_hint=False))
 TOOLS = [
+    (send_attached_deck, ToolAnnotations(title="Send the attached deck", read_only_hint=False, destructive_hint=False,
+                                         idempotent_hint=False, open_world_hint=False)),
     (get_icon_run, ToolAnnotations(title="Check an icon run", read_only_hint=True, open_world_hint=False)),
     (choose_icons, ToolAnnotations(title="Add chosen icons", read_only_hint=False, destructive_hint=False,
                                    idempotent_hint=True, open_world_hint=False)),
@@ -490,7 +511,7 @@ def _save_deck(deck: UploadFile, path: Path):
 
 async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
     """The deck the designer attached to their message, sent by Claude from its code tools (start_icon_run's
-    attached_deck). It waits with the run, and the page offers it in place of choosing a file."""
+    send_attached_deck). It waits with the run, and the page offers it in place of choosing a file."""
     form = await request.form(max_files=1, max_fields=0)
     deck = form.get("deck")
     await _check_deck(deck)
@@ -506,8 +527,7 @@ async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
         log.exception("run %s: saving the attached deck failed", run["id"])
         raise jobs.RunError("The deck didn't save. Try again.", 500)
     _update(run_dir, attached={"name": name, "ready": True})
-    return JSONResponse({"deck": name, "next": "The deck is ready in the Prezlab Icons panel (and at the run's link): "
-                                               "tell the designer in one line to check the mode and click Run there."})
+    return JSONResponse({"deck": name, "next": "The deck arrived: now call start_icon_run with this run's run_id."})
 
 
 async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
