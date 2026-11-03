@@ -23,10 +23,11 @@ A remote MCP server, so designers can run the tool from Claude chat, Cowork, Cla
 PowerPoint. `start_icon_run` opens the **Prezlab Icons panel** in the conversation (an MCP App): this test console
 (`app/static/index.html`) for one run, against that run's private endpoints, with the bridge to Claude in
 `app/static/panel.js`. Where Claude shows no panel, the run's private link opens the same page in the browser. Decks
-never pass through the chat. `get_icon_run` reports the picks and flags, `choose_icons` writes a fresh copy from the
-chat, and `search_icons` looks up the library. Designers sign in with their Odoo login, as in Image Studio (`app/oauth.py`, `app/odoo.py`):
-the connector is its own OAuth server, so it runs on Render's own address with no domain. A run belongs to whoever
-started it, and its deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the
+never pass through the chat: a deck attached to the message is sent by Claude from its code tools straight to the run
+(`start_icon_run`'s `attached_deck`), so the panel has it ready. `get_icon_run` reports the picks and flags,
+`choose_icons` writes a fresh copy from the chat, and `search_icons` looks up the library. Designers don't sign in:
+the hosted connector's address carries a secret (`/mcp/<ICON_MCP_SECRET>`, `app/auth.py`), so it runs on Render's own
+address with no domain. A run's deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the
 test UI (`app/jobs.py`). Hosting on Render (`render.yaml`) and adding the connector in
 Claude: `app/connector-setup.md`.
 

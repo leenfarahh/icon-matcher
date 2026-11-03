@@ -1,5 +1,5 @@
-# Render blueprint for the Claude connector (app/connector.py). Setup and sign-in: app/connector-setup.md.
-# Only the connector runs here: the test UI (app.main) has no sign-in and is never deployed.
+# Render blueprint for the Claude connector (app/connector.py). Setup: app/connector-setup.md.
+# Only the connector runs here: the test UI (app.main) has no protection and is never deployed.
 services:
   - type: web
     name: prezlab-icons
@@ -18,14 +18,8 @@ services:
         value: ./icons
       - key: ICON_WORK_DIR
         value: /var/data/runs
-      # Designers sign in with their Odoo login, as in Image Studio: copy its ODOO_URL and ODOO_DB.
-      - key: ODOO_URL
-        sync: false
-      - key: ODOO_DB
-        sync: false
-      - key: ODOO_ALLOWED_EMAIL_DOMAIN
-        value: prezlab.com
-      - key: ODOO_TD_ENCRYPTION_KEY    # a new random key (connector-setup.md); seals 2FA trusted-device keys
+      # Designers don't sign in: the connector's address is /mcp/<this secret> (connector-setup.md makes one).
+      - key: ICON_MCP_SECRET
         sync: false
       - key: ANTHROPIC_API_KEY    # Claude picks the icons; without it, keyword matching (rougher picks)
         sync: false

@@ -164,4 +164,4 @@ def download(job: str):
     return FileResponse(out, filename=out.name)
 
 # Claude (chat and the PowerPoint add-in) shows this same page, one run at a time, through the connector
-# (connector.py), which has sign-in and job cleanup. This test UI has neither: keep it on 127.0.0.1.
+# (connector.py), which has a secret address and job cleanup. This test UI has neither: keep it on 127.0.0.1.

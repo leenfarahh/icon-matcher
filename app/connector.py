@@ -4,16 +4,18 @@ icon placer on a deck and hand back a new copy. Run: uvicorn app.connector:app -
 start_icon_run opens the tool in a panel inside the conversation (an MCP App): the local test console
 (static/index.html) for one run, where the designer uploads the deck, reviews the picks, chooses icons for flagged
 placeholders on their slides and downloads the copy. Where Claude shows no panel, the run's private link opens the same
-page in the browser. Decks never pass through the chat: the page sends them straight to this server. Claude follows
-along with get_icon_run and can add icons from the chat with choose_icons. The original deck is never changed. Runs
-(deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Sign-in: auth.py (designers use their Odoo login: oauth.py).
-Hosting: connector-setup.md."""
+page in the browser. Decks never pass through the chat: the page sends them straight to this server, and a deck the
+designer attached to their message is sent by Claude from its code tools (attached_deck), so the page has it ready.
+Claude follows along with get_icon_run and can add icons from the chat with choose_icons. The original deck is never
+changed. Runs (deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Designers never sign in: the hosted connector's
+address carries a secret instead (auth.py). Hosting: connector-setup.md."""
 import hmac
 import json
 import logging
 import os
 import re
 import secrets
+import shlex
 import shutil
 import threading
 import time
@@ -24,7 +26,6 @@ from urllib.parse import urlparse
 
 import anyio
 from mcp.server.apps import Apps, ResourceCsp
-from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
@@ -33,12 +34,13 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
-from . import auth, config, jobs, oauth, pages
+from . import auth, config, jobs, pages
 from .library import Library
 
 log = logging.getLogger("icon-connector")
 MCP_PATH = "/mcp"
 RUN_FILE = "run.json"
+ATTACHED = "attached"   # the run's folder for the deck attached in the chat (deck files all end in .pptx)
 RUN_ID = re.compile(r"[0-9a-f]{12}")
 SLIDES = re.compile(r"\s*\d+(\s*,\s*\d+)*\s*")
 LABEL = 80   # characters of an item's text shown as its label
@@ -50,10 +52,13 @@ new copy; the designer's original file is never changed. The deck goes straight 
 page, never through this chat.
 
 1. Call start_icon_run (mode "replace" unless the designer asks for something else). In Claude web, desktop and
-   mobile it opens the Prezlab Icons panel in the conversation: the designer uploads the deck there and does the rest
-   in it (the picks, icons for flagged placeholders, the download). Tell them in one line to upload their deck in the
-   panel. Where no panel shows (for example the PowerPoint add-in or Claude Code), give them the run's link instead:
-   it opens the same page in the browser. In PowerPoint, ask them to save the deck first and upload the saved .pptx.
+   mobile it opens the Prezlab Icons panel in the conversation: the designer runs the deck there and does the rest
+   in it (the picks, icons for flagged placeholders, the download). If they attached the deck to their message and
+   you can read it in your code tools, pass its path as attached_deck and run the command the result gives you: the
+   panel then has the deck ready, so they don't upload it again. Otherwise tell them in one line to upload their deck
+   in the panel. Where no panel shows (for example the PowerPoint add-in or Claude Code), give them the run's link
+   instead: it opens the same page in the browser. In PowerPoint, ask them to save the deck first and upload the
+   saved .pptx.
 2. The panel tells you when they run the deck or add icons. Call get_icon_run for the details when they ask, or to
    follow a run they do at the link.
 3. If they'd rather choose in the chat: offer each flagged placeholder's options by what the icon draws, then call
@@ -111,18 +116,12 @@ def _link(run: dict, *tail: str) -> str:
     return "/".join([config.PUBLIC_URL, "runs", run["id"], run["token"], *tail])
 
 
-def _caller() -> str | None:
-    """The signed-in designer (their Odoo email); None without per-person sign-in."""
-    token = get_access_token()
-    return token.subject if token else None
-
-
-def _run(run_id: str, caller: str | None) -> tuple[Path, dict]:
-    """A live run the caller may use. With Odoo sign-in, a run belongs to whoever started it."""
+def _run(run_id: str) -> tuple[Path, dict]:
+    """A live run. Only the conversation that started it has its id."""
     run_dir = config.WORK_DIR / run_id
     if RUN_ID.fullmatch(run_id) and (run_dir / RUN_FILE).exists():
         run = _read(run_dir)
-        if run["expires"] > time.time() and run.get("owner") == caller:
+        if run["expires"] > time.time():
             return run_dir, run
     raise ToolError(f"no run '{run_id}' (runs expire after {config.RUN_TTL_HOURS:g} hours): "
                     "start a new one with start_icon_run")
@@ -202,32 +201,66 @@ def _results(run_dir: Path, run: dict) -> dict:
 
 # --- tools ------------------------------------------------------------------------------------------------------
 
-def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "") -> CallToolResult:
+def _deck_name(filename: str) -> str:
+    """A deck's file name on the server: its own name, made safe."""
+    return (re.sub(r"[^\w\- ]+", "_", Path(filename).stem).strip(" _")[:80] or "deck") + ".pptx"
+
+
+def _send_command(path: str, url: str) -> str:
+    """The command that sends a deck attached in the chat from Claude's code tools to its run (_attach). The path is
+    double-quoted for curl's -F, where commas and semicolons separate files and options, then quoted for the shell."""
+    quoted = '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return f"curl -sS --fail-with-body -F {shlex.quote('deck=@' + quoted)} {shlex.quote(url)}"
+
+
+def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "",
+                   attached_deck: str = "") -> CallToolResult:
     """Open Prezlab Icons for a PowerPoint deck: it places icons from Prezlab's approved library and returns a new
     copy. In Claude web, desktop and mobile this shows the Prezlab Icons panel in the conversation, where the designer
-    uploads the deck, reviews the picks, chooses icons for flagged placeholders and downloads the copy. Also returns
+    runs the deck, reviews the picks, chooses icons for flagged placeholders and downloads the copy. Also returns
     the run's private link, which opens the same page in the browser, for clients that show no panel.
 
     mode: "replace" (default) swaps the PL logo placeholders designers left for icons, and changes nothing else;
     "add" also finds spots for icons on slides without placeholders; "suggest" plans icons without adding any (the
     designer then adds the ones they pick). The designer can change it in the panel.
-    slides: only these slide numbers, comma-separated (e.g. "2,3,5"); empty for the whole deck."""
+    slides: only these slide numbers, comma-separated (e.g. "2,3,5"); empty for the whole deck.
+    attached_deck: when the designer attached the .pptx to their message and you can read it in your code tools, its
+    path there (e.g. /mnt/user-data/uploads/Client_deck.pptx). The result gives you a command that sends it to the
+    panel, so they don't upload it again. Empty when no deck is attached."""
     if slides.strip() and not SLIDES.fullmatch(slides):
         raise ToolError('slides: slide numbers separated by commas, e.g. "2,3,5", or empty for the whole deck')
+    attached_deck = attached_deck.strip()
+    if attached_deck and not attached_deck.lower().endswith(".pptx"):
+        raise ToolError("attached_deck: the path of the attached .pptx (a .ppt must be saved as .pptx in PowerPoint "
+                        "first), or empty")
     _cleanup()
     run_id = uuid.uuid4().hex[:12]
     run_dir = config.WORK_DIR / run_id
     run_dir.mkdir(parents=True)
     now = time.time()
+    # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
     run = _write(run_dir, {
         "id": run_id, "token": secrets.token_urlsafe(24), "mode": mode, "status": "waiting", "error": "",
         "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
-        "owner": _caller(), "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
+        "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
+        if attached_deck else None,
+        "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
     link = _link(run)
     told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires_in_hours": config.RUN_TTL_HOURS,
             "next": "The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
                     "in one line to upload their deck there; don't paste the link. Only where no panel shows (the "
                     "PowerPoint add-in, Claude Code), give them the link: it opens the same page in the browser."}
+    if attached_deck:
+        host, url = urlparse(config.PUBLIC_URL).netloc, _link(run, "deck")
+        told["attached_deck"] = {"upload_url": url, "command": _send_command(attached_deck, url)}
+        told["next"] = (
+            "Run attached_deck.command in your code tool now: it sends the deck they attached to this run, and the "
+            "Prezlab Icons panel (shown with this result in Claude web, desktop and mobile) has it ready in place of "
+            "choosing a file. When it prints the deck's name, tell the designer in one line to check the mode and "
+            "click Run in the panel; don't paste the link. If it fails with a network or proxy error, tell them to "
+            f"upload the deck in the panel instead, and that a Claude admin can allow {host} for code execution so "
+            "attached decks come straight through. Only where no panel shows (the PowerPoint add-in, Claude Code), "
+            "give them the link: it opens the same page in the browser, with the deck.")
     # The panel reads structuredContent (Claude doesn't): the address it works against.
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(told, indent=2))],
                           structured_content={"run_id": run_id, "base": link + "/", "link": link, "mode": mode})
@@ -237,7 +270,7 @@ def get_icon_run(run_id: str) -> dict:
     """Where an icon run is. waiting: the designer hasn't run a deck yet. running: call again in a few seconds.
     failed: the reason, for the designer. done: the icons placed (or suggested), the items flagged with the reason
     and, for placeholders a designer can fill, the closest icons; and the new copy's download link."""
-    run_dir, run = _run(run_id, _caller())
+    run_dir, run = _run(run_id)
     status = run["status"]
     if status == "waiting":
         return {"run_id": run_id, "status": status, "link": _link(run),
@@ -258,7 +291,7 @@ async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks
     search_icons. Only placeholders that can_choose take one.
     picks: suggestion numbers ("pick" in get_icon_run) to add, in suggest mode. In replace and add mode the icons
     already placed stay; pass picks only to keep fewer of them."""
-    run_dir, run = _run(run_id, _caller())
+    run_dir, run = _run(run_id)
     if run["status"] != "done":
         raise ToolError(f"the run isn't finished ({run['status']}): call get_icon_run first")
     try:
@@ -411,10 +444,12 @@ def _for_page(run: dict, result: dict) -> dict:
 
 
 async def _state(request: Request, run_dir: Path, run: dict) -> Response:
-    """What the page opens with: the mode and slides Claude set, and the run's latest result."""
+    """What the page opens with: the mode and slides Claude set, the deck attached in the chat (the page asks again
+    until it's ready) and the run's latest result."""
     result = _for_page(run, jobs.saved(run_dir)) if run["status"] == "done" else None
     return JSONResponse({"status": run["status"], "error": run["error"], "mode": run["mode"],
-                         "slides": ",".join(map(str, run["slides"] or [])), "result": result})
+                         "slides": ",".join(map(str, run["slides"] or [])), "attached": run.get("attached"),
+                         "result": result})
 
 
 async def _library_index(request: Request, run_dir: Path, run: dict) -> Response:
@@ -430,22 +465,62 @@ async def _icon(request: Request, run_dir: Path, run: dict) -> Response:
 
 
 def _clear(run_dir: Path):
-    """Everything from the run's last deck (the deck, its report and copy, uploaded icons, slide pictures)."""
+    """Everything from the run's last deck (the deck, its report and copy, uploaded icons, slide pictures). The deck
+    attached in the chat stays, for the next Run."""
     for path in run_dir.iterdir():
-        if not path.name.startswith(RUN_FILE):
+        if not path.name.startswith(RUN_FILE) and path.name != ATTACHED:
             shutil.rmtree(path) if path.is_dir() else path.unlink()
 
 
-async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
-    """The page's Run: the deck is saved, run and its report returned, as the test console's POST /jobs does.
-    Running again starts the run over with the new deck."""
-    form = await request.form(max_files=1, max_fields=3)
-    deck, mode, slides = form.get("deck"), str(form.get("mode") or run["mode"]), str(form.get("slides") or "")
+async def _check_deck(deck) -> None:
     if not isinstance(deck, UploadFile) or not (deck.filename or "").lower().endswith(".pptx"):
         raise jobs.RunError("Choose a PowerPoint deck (.pptx).")
     if await deck.read(4) != b"PK\x03\x04":   # every .pptx is a zip
         raise jobs.RunError("This file isn't a PowerPoint deck: save it from PowerPoint as a .pptx.")
     await deck.seek(0)
+
+
+def _save_deck(deck: UploadFile, path: Path):
+    with path.open("wb") as f:
+        shutil.copyfileobj(deck.file, f)
+    if path.stat().st_size > config.MAX_DECK_MB * 2**20:
+        raise jobs.RunError(f"This deck is over {config.MAX_DECK_MB} MB. Compress its pictures in PowerPoint "
+                            "(File > Compress Pictures) and try again.", 413)
+
+
+async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
+    """The deck the designer attached to their message, sent by Claude from its code tools (start_icon_run's
+    attached_deck). It waits with the run, and the page offers it in place of choosing a file."""
+    form = await request.form(max_files=1, max_fields=0)
+    deck = form.get("deck")
+    await _check_deck(deck)
+    name, folder = _deck_name(deck.filename), run_dir / ATTACHED
+    shutil.rmtree(folder, ignore_errors=True)
+    try:
+        folder.mkdir()
+        _save_deck(deck, folder / name)
+    except (OSError, jobs.RunError) as e:
+        shutil.rmtree(folder, ignore_errors=True)
+        if isinstance(e, jobs.RunError):
+            raise
+        log.exception("run %s: saving the attached deck failed", run["id"])
+        raise jobs.RunError("The deck didn't save. Try again.", 500)
+    _update(run_dir, attached={"name": name, "ready": True})
+    return JSONResponse({"deck": name, "next": "The deck is ready in the Prezlab Icons panel (and at the run's link): "
+                                               "tell the designer in one line to check the mode and click Run there."})
+
+
+async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
+    """The page's Run: the deck chosen in the page, else the one attached in the chat, is saved, run and its report
+    returned, as the test console's POST /jobs does. Running again starts the run over with the new deck."""
+    form = await request.form(max_files=1, max_fields=3)
+    deck, mode, slides = form.get("deck"), str(form.get("mode") or run["mode"]), str(form.get("slides") or "")
+    chosen = isinstance(deck, UploadFile) and bool(deck.filename)   # an empty file field sends a nameless file
+    attached = run.get("attached") or {}
+    if chosen:
+        await _check_deck(deck)
+    elif not (attached.get("ready") and (run_dir / ATTACHED / attached["name"]).is_file()):
+        raise jobs.RunError("Choose a PowerPoint deck (.pptx).")
     if mode not in MODES:
         raise jobs.RunError(f"Mode: one of {', '.join(MODES)}.")
     if slides.strip() and not SLIDES.fullmatch(slides):
@@ -453,13 +528,12 @@ async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
     if not _claim(run_dir):
         raise jobs.RunError("This run is still placing icons: wait for it to finish.", 409)
     try:
-        name = (re.sub(r"[^\w\- ]+", "_", Path(deck.filename).stem).strip(" _")[:80] or "deck") + ".pptx"
+        name = _deck_name(deck.filename) if chosen else attached["name"]
         _clear(run_dir)
-        with (run_dir / name).open("wb") as f:
-            shutil.copyfileobj(deck.file, f)
-        if (run_dir / name).stat().st_size > config.MAX_DECK_MB * 2**20:
-            raise jobs.RunError(f"This deck is over {config.MAX_DECK_MB} MB. Compress its pictures in PowerPoint "
-                                "(File > Compress Pictures) and try again.", 413)
+        if chosen:
+            _save_deck(deck, run_dir / name)
+        else:
+            shutil.copyfile(run_dir / ATTACHED / name, run_dir / name)
     except (OSError, jobs.RunError) as e:
         _clear(run_dir)
         _update(run_dir, status="failed", error=str(e) if isinstance(e, jobs.RunError) else "the upload didn't save")
@@ -521,7 +595,7 @@ async def _download(request: Request, run_dir: Path, run: dict) -> Response:
 
 RUN_LINK = "/runs/{run_id}/{token}"
 API = [("/state", ["GET"], _state), ("/library", ["GET"], _library_index), ("/icons/{icon_id}.svg", ["GET"], _icon),
-       ("/jobs", ["POST"], _run_deck), ("/jobs/{job}/apply", ["POST"], _apply),
+       ("/deck", ["POST"], _attach), ("/jobs", ["POST"], _run_deck), ("/jobs/{job}/apply", ["POST"], _apply),
        ("/jobs/{job}/uploads", ["POST"], _upload_icon), ("/jobs/{job}/uploads/{digest}.svg", ["GET"], _uploaded_icon),
        ("/jobs/{job}/slides/{n:int}.png", ["GET"], _slide), ("/jobs/{job}/download", ["GET"], _download)]
 
@@ -533,27 +607,20 @@ async def health(request: Request) -> Response:
 # --- app --------------------------------------------------------------------------------------------------------
 
 def build_app(mode: str | None = None):
-    """The connector: the MCP endpoint at /mcp behind the sign-in mode (auth.py) with its tools and the Prezlab Icons
-    panel, the page and its endpoints under each run's private link and, with Odoo sign-in, the OAuth endpoints and
-    sign-in page."""
+    """The connector: the MCP endpoint (at /mcp, or /mcp/<secret>: auth.py) with its tools and the Prezlab Icons
+    panel, and the page and its endpoints under each run's private link."""
     mode = mode or auth.mode()
-    mcp_url = config.PUBLIC_URL + MCP_PATH
     url = urlparse(config.PUBLIC_URL)
     origin = f"{url.scheme}://{url.netloc}"
-    provider = oauth.Provider(oauth.Store(config.AUTH_DB), config.PUBLIC_URL, mcp_url,
-                              oauth.sealing_key(config.ODOO_TD_ENCRYPTION_KEY)) if mode == "odoo" else None
     apps = Apps()   # the panel: start_icon_run shows it; it may reach this server only (CSP), for data and icons
     apps.add_html_resource(PANEL_URI, panel_html(), name="Prezlab Icons",
                            description="Run a deck, review the picks, choose icons for flagged placeholders, download.",
                            csp=ResourceCsp(connect_domains=[origin], resource_domains=[origin]))
     fn, annotations = PANEL_TOOL
     apps.tool(resource_uri=PANEL_URI, annotations=annotations)(fn)
-    server = MCPServer("prezlab-icons", title="Prezlab Icons", instructions=INSTRUCTIONS, extensions=[apps],
-                       **(oauth.server_settings(provider) if provider else {}))
+    server = MCPServer("prezlab-icons", title="Prezlab Icons", instructions=INSTRUCTIONS, extensions=[apps])
     for fn, annotations in TOOLS:
         server.add_tool(fn, annotations=annotations)
-    if provider:
-        server.custom_route("/signin/{request_id}", ["GET", "POST"])(provider.signin)
     server.custom_route(RUN_LINK, ["GET"])(run_page)
     for path, methods, handler in API:
         server.custom_route(RUN_LINK + path, [*methods, "OPTIONS"])(_api(handler))
@@ -563,8 +630,8 @@ def build_app(mode: str | None = None):
         enable_dns_rebinding_protection=True, allowed_hosts=[url.netloc, *local],
         allowed_origins=[f"{url.scheme}://{url.netloc}", "https://claude.ai", "https://pivot.claude.ai",
                          "http://127.0.0.1:*", "http://localhost:*"])
-    app = server.streamable_http_app(streamable_http_path=MCP_PATH, stateless_http=True, json_response=True,
-                                     transport_security=security)
+    app = server.streamable_http_app(streamable_http_path=auth.mcp_path(mode, MCP_PATH), stateless_http=True,
+                                     json_response=True, transport_security=security)
     if not _sweeping.is_set():
         _sweeping.set()
         threading.Thread(target=_sweep, daemon=True, name="run-cleanup").start()

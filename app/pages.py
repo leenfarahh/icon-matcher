@@ -1,7 +1,7 @@
-"""The connector's few web pages (run pages in connector.py, sign-in in oauth.py): one look, private by default."""
+"""The connector's few web pages (run pages in connector.py): one look, private by default."""
 from starlette.responses import HTMLResponse
 
-# Never cached, indexed, framed or sent on as a referrer: run links and sign-in requests carry secrets in their path.
+# Never cached, indexed, framed or sent on as a referrer: run links carry secrets in their path.
 PRIVATE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex",
            "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
 PAGE = """<!doctype html>
@@ -18,10 +18,6 @@ h1 { font-size: 20px; margin: 0 0 8px; } p, li { color: var(--muted); } .bad { c
 .button, button { display: inline-block; background: var(--accent); color: var(--on-accent); border: 0; border-radius: 8px;
   padding: 10px 16px; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
 input[type=file] { display: block; margin: 16px 0; font: inherit; color: var(--text); max-width: 100%; }
-label { display: block; margin: 14px 0 4px; font-weight: 600; font-size: 14px; }
-input[type=text], input[type=password] { box-sizing: border-box; width: 100%; padding: 10px 12px; font: inherit;
-  color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
-form button { margin-top: 18px; }
 small { color: var(--muted); }
 </style></head><body><main><div class="card">%BODY%</div></main></body></html>"""
 

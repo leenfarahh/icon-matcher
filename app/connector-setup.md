@@ -2,36 +2,34 @@
 
 The connector (`app/connector.py`) lets designers run the icon placer from Claude chat, Cowork, Claude Code and the
 Claude add-in for PowerPoint. In Claude web, desktop and mobile it opens a **Prezlab Icons panel** in the conversation:
-the same page as the local test console, for one run. The designer uploads the deck, reviews the picks, chooses icons
-for flagged placeholders on their slides and downloads the new copy, all inside Claude; the original file is never
-changed. Where Claude shows no panel, Claude gives a private link that opens the same page in the browser.
+the same page as the local test console, for one run. A deck the designer attached to their message is already in the
+panel; they review the picks, choose icons for flagged placeholders on their slides and download the new copy, all
+inside Claude. The original file is never changed. Where Claude shows no panel, Claude gives a private link that opens
+the same page in the browser.
 
-Designers sign in with their **Odoo login**, exactly as in Image Studio, 2FA included. The connector runs its own
-sign-in, so it lives on Render's free `onrender.com` address: no domain, no DNS record, nothing for IT to set up.
+**Designers don't sign in.** Instead the connector's address carries a secret (`/mcp/<ICON_MCP_SECRET>`): the
+Owner adds that address in claude.ai once, and only clients with it reach the tools. It runs on Render's free
+`onrender.com` address: no domain, no DNS record, nothing for IT to set up.
 
 | Step | Who | Where |
 | --- | --- | --- |
 | 1. Deploy | Tool owner | Render |
-| 2. Add the connector | Claude organization Owner | claude.ai |
+| 2. Add the connector, allow attached decks | Claude organization Owner | claude.ai |
 | 3. Connect and use | Each designer | Claude, PowerPoint add-in |
 
 ## 1. Deploy on Render
 
 `render.yaml` describes the service: Docker (the `Dockerfile`: Python 3.12 plus LibreOffice, which makes the slide
-pictures for the review screen), one Standard instance (2 GB) with a 5 GB disk, Frankfurt region. The disk keeps
-sign-ins and runs across restarts and redeploys. A Free instance works for a trial, but it has no disk and sleeps after
-15 idle minutes: everyone then signs in again, and runs in progress are lost. On Starter (512 MB), slide pictures of
-large decks can run out of memory.
+pictures for the review screen), one Standard instance (2 GB) with a 5 GB disk, Frankfurt region. The disk keeps runs
+across restarts and redeploys. A Free instance works for a trial, but it has no disk and sleeps after 15 idle minutes:
+runs in progress are lost. On Starter (512 MB), slide pictures of large decks can run out of memory.
 
 1. Push this repository to GitHub.
-2. In Render: **New**, **Blueprint**, pick the repository. Render reads `render.yaml` and asks for these. The Odoo
-   values are the same as Image Studio's, so copy them from its Environment tab:
+2. In Render: **New**, **Blueprint**, pick the repository. Render reads `render.yaml` and asks for these:
 
    | Setting | Value |
    | --- | --- |
-   | `ODOO_URL` | Image Studio's `ODOO_URL` (e.g. `https://prezlab.odoo.com`) |
-   | `ODOO_DB` | Image Studio's `ODOO_DB` |
-   | `ODOO_TD_ENCRYPTION_KEY` | A new key: `python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"` |
+   | `ICON_MCP_SECRET` | A new secret: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
    | `ANTHROPIC_API_KEY` | The key Claude uses to pick icons; without it, keyword matching (rougher picks) |
 
    Creating the service by hand (**New**, **Web Service**) instead works too: runtime **Docker**, no build or start
@@ -39,40 +37,53 @@ large decks can run out of memory.
    values above.
 3. Once it's live, open `https://<service>.onrender.com/health`: it shows the icon count.
 
-The service's address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICON_PUBLIC_URL` only to use another address.
+The service refuses to start without `ICON_MCP_SECRET` (it would be open to anyone); Render then keeps the previous
+version running. Its address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICON_PUBLIC_URL` only to use another one.
+
+**Moving a service that used Odoo sign-in:** in Render, **Environment**, add `ICON_MCP_SECRET` and delete `ODOO_URL`,
+`ODOO_DB`, `ODOO_ALLOWED_EMAIL_DOMAIN` and `ODOO_TD_ENCRYPTION_KEY`; save and deploy. The old sign-ins file
+(`/var/data/runs/auth.sqlite3`) is no longer read and can be deleted from the service's **Shell**. Then do step 2 with
+the new address.
 
 **A service created on the Python runtime** (before slide pictures) moves to Docker in place, keeping its address,
-settings, disk and sign-ins: **Settings**, **Build & Deploy**, **Source**, **Edit**, Runtime **Docker**, Dockerfile
-path `./Dockerfile`, Docker command empty, **Save**; then **Manual Deploy**. The first build takes 5 to 10 minutes
-(it installs LibreOffice); later ones reuse it.
+settings and disk: **Settings**, **Build & Deploy**, **Source**, **Edit**, Runtime **Docker**, Dockerfile path
+`./Dockerfile`, Docker command empty, **Save**; then **Manual Deploy**. The first build takes 5 to 10 minutes (it
+installs LibreOffice); later ones reuse it.
 
 Optional settings (`.env.example` lists them all): `ICON_RUN_TTL_HOURS` (24), `ICON_MAX_DECK_MB` (150),
 `ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
-`ICON_MIN_FIT` (3: how sure Claude must be to place an icon), `ICON_ENHANCE` (1: read each card before picking),
-`ODOO_ALLOWED_EMAIL_DOMAIN` (`prezlab.com`).
+`ICON_MIN_FIT` (3: how sure Claude must be to place an icon), `ICON_ENHANCE` (1: read each card before picking).
 
 The icon library ships with the code (`icons/`). To publish library changes, commit them and Render redeploys.
 
-## 2. Add the connector in Claude
+## 2. In claude.ai (Organization Owner)
 
-An Owner, in claude.ai: **Organization settings**, **Connectors**, **Add custom connector**
+**Add the connector.** **Organization settings**, **Connectors**, **Add custom connector**
 ([Anthropic's guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)).
 
 - Name: `Prezlab Icons`
-- URL: `https://<service>.onrender.com/mcp`
-- Advanced settings: leave empty. Claude registers itself.
+- URL: `https://<service>.onrender.com/mcp/<ICON_MCP_SECRET>`
+- Advanced settings: leave empty.
+
+Replacing an Odoo sign-in connector: edit its URL to the one above, or remove it and add it again if Claude still asks
+designers to sign in.
+
+**Let attached decks through.** Claude sends a deck attached to the message from its code execution sandbox, which
+reaches only the domains the organization allows. **Organization settings**, **Capabilities**, code execution's
+network access: allow specific domains and add `<service>.onrender.com`. Without it, Claude says the deck didn't come
+through and designers choose it in the panel instead.
 
 ## 3. Designers
 
-1. **Connect once.** In Claude, open Connectors, choose Prezlab Icons, **Connect**. A Prezlab Icons page opens: sign
-   in with your Odoo login (and your 2FA code, if Odoo asks). A sign-in lasts 30 days.
+1. **Connect once.** In Claude, open Connectors, choose Prezlab Icons, **Connect**. There's no sign-in.
 2. **PowerPoint add-in.** Click **+** below the chat input, **Connectors**, and turn on Prezlab Icons. Optional:
    in the add-in's Settings, Instructions, add "For icons, use the Prezlab Icons connector", so Claude doesn't
    reach for other icon sources.
-3. **Ask.** For example: "Replace the PL placeholders in this deck with Prezlab icons", "Add Prezlab icons to
-   slides 3 to 6", or "Suggest icons for this deck, don't add them yet". The Prezlab Icons panel opens in the chat.
-   In PowerPoint, save the deck first, then upload the saved file.
-4. **Work in the panel**, as in the local tool: choose the deck, **Run**, review the picks, **Choose flagged icons**
+3. **Attach the deck and ask.** For example: "Replace the PL placeholders in this deck with Prezlab icons", "Add
+   Prezlab icons to slides 3 to 6", or "Suggest icons for this deck, don't add them yet". The Prezlab Icons panel
+   opens in the chat with the deck in it (a few seconds after the panel, while Claude sends it). Without an
+   attachment, choose the deck in the panel. In PowerPoint, save the deck first, then upload the saved file.
+4. **Work in the panel**, as in the local tool: check the mode, **Run**, review the picks, **Choose flagged icons**
    (click a highlighted placeholder, then one of its closest icons, a library search result or your own upload),
    **Add chosen**, **Download deck**. Claude saves the download for you. **Full screen** gives the panel room;
    **Open in browser** opens the same page in a browser tab. Claude hears what you did in the panel, so you can also
@@ -85,28 +96,23 @@ An Owner, in claude.ai: **Organization settings**, **Connectors**, **Add custom 
     uvicorn app.connector:app --port 8001
     claude mcp add --transport http prezlab-icons http://127.0.0.1:8001/mcp
 
-On 127.0.0.1 the connector runs without sign-in unless `ODOO_URL` is set. To test a deployed copy from Claude Code
-without Odoo, set `ICON_MCP_TOKEN` (32+ characters) and add `--header "Authorization: Bearer <token>"` to
-`claude mcp add`.
+On 127.0.0.1 the connector is open at `/mcp` unless `ICON_MCP_SECRET` is set. To use the deployed connector from
+Claude Code: `claude mcp add --transport http prezlab-icons https://<service>.onrender.com/mcp/<ICON_MCP_SECRET>`.
+Claude Code sends a deck you name by its path on your machine, so it needs no allowed domain.
 
 ## Security and data
 
-- **Sign-in.** The connector is its own OAuth server (`app/oauth.py`) and checks logins against Odoo
-  (`app/odoo.py`, ported from Image Studio). Only active, internal Odoo users with an `@prezlab.com` email get in;
-  portal accounts are refused. Attempts are limited per network and per login. Sign-ins come back only to Claude's own
-  addresses (claude.ai, claude.com, or this machine for Claude Code).
-- **Passwords.** Passed to Odoo and never stored or logged. For 2FA users, Odoo's trusted-device key is kept, sealed
-  with `ODOO_TD_ENCRYPTION_KEY`, so the code is asked for once every 30 days. Changing the key only means designers
-  enter a code once more.
-- **Tokens.** Stored as hashes on the service's disk (`ICON_AUTH_DB`). Access tokens last an hour and are for this
-  connector only; refresh tokens rotate, and a reused one ends that sign-in. To sign everyone out, delete
-  `/var/data/runs/auth.sqlite3` and restart the service. Archiving someone in Odoo stops new sign-ins at once; an
-  existing sign-in runs out within 30 days.
-- **Runs.** A run belongs to the designer who started it: no one else's Claude can read or change it. The page and
-  everything it reaches (the deck upload, the results, the download) sit behind a private link, unique to the run, so
-  it shouldn't be pasted anywhere shared. The panel calls that link straight from the designer's browser; the
-  connector answers only Claude's panel origin (`*.claudemcpcontent.com`) and its own pages, and the panel may reach
-  no other server (its declared CSP).
+- **Access.** Designers don't sign in. The tools answer only at `/mcp/<ICON_MCP_SECRET>`; every other address gets
+  404. Anyone who has that address can run decks through the connector, on Prezlab's Claude API key, so treat it as a
+  password: keep it in claude.ai's connector settings and Render, never in chats, documents or tickets. If it leaks,
+  set a new `ICON_MCP_SECRET` in Render and update the connector's URL in claude.ai.
+- **Runs.** Without sign-in a run isn't tied to a designer; it is reached through its id and its private link, which
+  only the conversation that started it has. The page and everything it reaches (the deck upload, the results, the
+  download) sit behind that link, so it shouldn't be pasted anywhere shared. The panel calls that link straight from
+  the designer's browser; the connector answers only Claude's panel origin (`*.claudemcpcontent.com`) and its own
+  pages, and the panel may reach no other server (its declared CSP).
+- **Attached decks.** Claude sends the attachment from its code execution sandbox straight to the run's private link
+  over HTTPS. The deck's contents never go through the chat.
 - **Library.** The panel's Library tab reads the library; adding and editing icons stays in the local tool, since
   changes on Render would be lost at the next deploy.
 - **Retention.** The uploaded deck, its copy and the link are deleted after `ICON_RUN_TTL_HOURS` (24 hours by
@@ -114,15 +120,15 @@ without Odoo, set `ICON_MCP_TOKEN` (32+ characters) and add `--header "Authoriza
   owns Prezlab's data policy before client decks go through it.
 - **Claude API.** With `ANTHROPIC_API_KEY` set, the slide text that needs icons goes to the Claude API to pick them,
   as it does in the local tool.
-- **Logs.** Access logs are off, because run links and sign-in pages carry secrets in the path.
-- **Test UI.** `app.main` (the local test UI) has no sign-in and is never deployed: keep it on 127.0.0.1.
+- **Logs.** Access logs are off, because the connector's address and the run links carry secrets in the path.
+- **Test UI.** `app.main` (the local test UI) has no protection at all and is never deployed: keep it on 127.0.0.1.
 
 ## Limits
 
 - The connector returns a new copy; it doesn't edit the open deck in place.
-- One instance: runs and sign-ins live on its disk, and decks are processed there, two at a time.
-- The Odoo 2FA step drives Odoo's login pages, as Image Studio does, so an Odoo upgrade that changes them can break
-  it for 2FA users until `app/odoo.py` is updated; the sign-in page then says so.
+- One instance: runs live on its disk, and decks are processed there, two at a time.
+- Attached decks need Claude's code execution with network access to the connector (step 2). Where Claude has no
+  code execution, designers choose the deck in the panel.
 - Slide pictures need PowerPoint on the server, so on Render the review shows the flagged placeholders on a blank
   slide (the local test UI shows the real slide).
 - An inline panel has a height limit; long results fit better in **Full screen**.

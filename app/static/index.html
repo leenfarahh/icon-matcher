@@ -129,6 +129,14 @@
   td.color-cell .note { font-size: 11px; }
   td.tick input, th.tick input { width: 16px; height: 16px; cursor: pointer; }
   .card.retired { opacity: .7; }
+  /* the deck the designer attached in the chat, in place of choosing a file (hosted only) */
+  .attached { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .attached .deck { display: flex; gap: 8px; align-items: center; }
+  .attached .name { display: grid; padding: 4px 10px; border-radius: 6px; background: var(--ok-soft); color: var(--ink); font-size: 14px; font-weight: 400; max-width: 320px; }
+  .attached .name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .attached .name small { font-size: 11px; color: var(--muted); }
+  .attached .name.coming { background: #f0f2f5; }
+  .attached .upload { margin-top: 0; }
   [hidden] { display: none !important; }
   .hosted .edit-only { display: none !important; }   /* the library is edited locally only */
 </style>
@@ -147,7 +155,11 @@
   <section id="tab-run">
     <form id="run" class="panel">
       <div class="row">
-        <label>Deck (.pptx)<input type="file" name="deck" accept=".pptx" required></label>
+        <label id="deck-field">Deck (.pptx)<input type="file" name="deck" id="deck" accept=".pptx" required></label>
+        <div class="attached" id="attached" hidden>Deck (.pptx)
+          <div class="deck"><span class="name"><b id="attached-name"></b><small id="attached-state"></small></span>
+            <label class="upload" for="deck">Choose another file</label></div>
+        </div>
         <label>Mode
           <select name="mode">
             <option value="replace" selected>Replace PL placeholders (writes a copy)</option>
@@ -158,6 +170,7 @@
         <label>Slides (optional)<input name="slides" placeholder="e.g. 2,3,5" size="12"></label>
         <button class="primary" type="submit">Run</button>
       </div>
+      <p class="note" id="attached-note" hidden></p>
       <p class="note" id="llm-note"></p>
     </form>
     <div id="out"></div>
@@ -490,6 +503,43 @@ $("#run").onsubmit = async e => {
   }
 };
 
+// Hosted: the deck the designer attached to their message in Claude. Claude sends it to the run from its code tools
+// (start_icon_run's attached_deck) just after the panel opens, and the page offers it in place of choosing a file; a
+// file chosen here still wins.
+let attached = null;         // {name, ready}, from the run's state
+const ATTACH_WAIT = 180e3;   // then it isn't coming (Claude couldn't send it): the designer chooses the file
+
+function drawAttached() {
+  const use = !!attached && !$("#deck").files.length;
+  $("#deck-field").hidden = use;
+  $("#attached").hidden = !use;
+  $("#deck").required = !use;
+  const run = $("#run button");
+  if (run.textContent === "Run") run.disabled = use && !attached.ready;   // never while a run is going
+  if (!use) return;
+  $("#attached-name").textContent = attached.name;
+  $("#attached-state").textContent = attached.ready ? "Attached in the chat" : "On its way from the chat…";
+  $("#attached .name").classList.toggle("coming", !attached.ready);
+}
+
+async function awaitAttached() {
+  const until = Date.now() + ATTACH_WAIT;
+  while (attached && !attached.ready) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const s = await (await fetch(U("state"))).json();
+      if (s.attached) attached = s.attached;
+    } catch (e) { /* asked again next time */ }
+    if (!attached.ready && Date.now() > until) {
+      $("#attached-note").textContent = `${attached.name} didn't come through from the chat: choose it here.`;
+      $("#attached-note").hidden = false;
+      attached = null;
+    }
+    drawAttached();
+  }
+}
+if (HOST) $("#deck").addEventListener("change", drawAttached);
+
 // How Claude read an item before picking (the prompt enhancement) and what its icon could show; without it (keyword
 // matching), the idea it was matched on.
 const readAs = (item, icon = "") => item.reads_as
@@ -808,13 +858,18 @@ if (HOST && HOST.download) document.addEventListener("click", e => {
   if (a) { e.preventDefault(); HOST.download(a.href); }
 });
 
-async function restore() {   // hosted: the mode and slides Claude set for this run, and its latest result
+async function restore() {   // hosted: the mode, slides and deck Claude set for this run, and its latest result
   try {
     const res = await fetch(U("state"));
     if (!res.ok) return;
     const s = await res.json();
     $("#run").elements.mode.value = s.mode;
     $("#run").elements.slides.value = s.slides;
+    if (s.attached) {
+      attached = s.attached;
+      drawAttached();
+      awaitAttached();
+    }
     if (s.result) renderResult(s.result);
   } catch (e) { /* the form still works */ }
 }
