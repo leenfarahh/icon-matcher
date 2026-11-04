@@ -98,7 +98,7 @@
   .slide-tabs .complete .count { color: var(--done); font-weight: 600; }
   .slide { position: relative; width: 100%; background: #eef0f3; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .slide .shot, .slide .marks { position: absolute; inset: 0; width: 100%; height: 100%; }
-  .slide .wait { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  .slide-msg { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
   .ph { position: absolute; padding: 0; border: 3px solid var(--mark); border-radius: 6px; background: rgba(255, 45, 135, .14); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
   .ph .num { position: absolute; top: -12px; left: -12px; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: var(--mark); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
   .ph.chosen { border-color: var(--accent); background: transparent; } .ph.chosen .num { background: var(--accent); }
@@ -576,6 +576,7 @@ function renderResult(r) {
       <div class="review">
         <div><div class="slide-tabs" id="slide-tabs"></div>
           <div class="slide" id="slide" style="aspect-ratio: ${r.slide_size[0]} / ${r.slide_size[1]}"></div>
+          <div class="slide-msg" id="slide-msg" aria-live="polite" hidden></div>
           <div class="note">Arrow keys move between placeholders.</div></div>
         <aside class="chooser" id="chooser" aria-live="polite"></aside>
       </div>`, "review") : "";
@@ -728,6 +729,27 @@ function drawResults() {
     || (q ? '<span class="note" style="margin:0">No icons match.</span>' : "");
 }
 
+// A slide's picture under its placeholders. Asked for first, so that when there's none the line under the slide gives
+// the server's reason (no LibreOffice, out of memory…); the picture then comes from the run's cache. Without one the
+// placeholders stay on a blank slide. The line sits under the slide, never over a placeholder.
+async function showShot(stage, src) {
+  const key = stage.dataset.shot, img = stage.querySelector(".shot"), msg = $("#slide-msg");
+  const say = text => { if (stage.dataset.shot === key) { msg.textContent = text; msg.hidden = !text; } };
+  const none = why => say(`No picture of this slide: ${why.replace(/\.$/, "")}. The placeholders are shown on a blank slide.`);
+  say("Making pictures of the flagged slides. The first one can take up to half a minute…");
+  let res;
+  try { res = await fetch(src); } catch (e) { return none("the server didn't answer"); }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    return none((body && body.detail) || `server error ${res.status}`);
+  }
+  if (res.body) res.body.cancel();   // it's there: the picture itself loads below
+  if (stage.dataset.shot !== key) return;
+  img.onload = () => { img.hidden = false; say(""); };
+  img.onerror = () => none("the picture didn't load");
+  img.src = src;
+}
+
 function drawReview() {
   if (!$("#review").open) return;   // drawn when opened (the toggle below): no slide pictures until then
   const {r, open, slides} = rv;
@@ -748,12 +770,8 @@ function drawReview() {
   const stage = $("#slide");
   if (stage.dataset.shot !== `${slide}:${rv.version}`) {   // a new picture only when the slide or the copy changes
     stage.dataset.shot = `${slide}:${rv.version}`;
-    stage.innerHTML = `<div class="wait">Making pictures of the flagged slides. The first one can take up to half a minute…</div>
-      <img class="shot" hidden alt="Slide ${slide}" src="${U(`jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}`)}">
-      <div class="marks"></div>`;
-    const shot = stage.querySelector(".shot"), wait = stage.querySelector(".wait");
-    shot.onload = () => { shot.hidden = false; wait.hidden = true; };
-    shot.onerror = () => { wait.textContent = "No picture of this slide here (it takes PowerPoint or LibreOffice where the tool runs). The placeholders are shown on a blank slide."; };
+    stage.innerHTML = `<img class="shot" hidden alt="Slide ${slide}"><div class="marks"></div>`;
+    showShot(stage, U(`jobs/${encodeURIComponent(r.job)}/slides/${slide}.png?v=${rv.version}`));
   }
   const [W, H] = r.slide_size, pct = (v, of) => `${(100 * v / of).toFixed(3)}%`;
   const at = ([l, t, w, h]) => `left:${pct(l, W)};top:${pct(t, H)};width:${pct(w, W)};height:${pct(h, H)}`;

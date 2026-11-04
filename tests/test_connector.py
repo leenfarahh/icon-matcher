@@ -236,7 +236,10 @@ def test_flagged_placeholders_get_the_icons_the_designer_chose_or_uploaded(env, 
                                                                                           "Quarterly outlook"]
         assert all(f["spot"] for f in result["flags"])
         job = panel["base"] + f"jobs/{told['run_id']}/"
-        assert c.get(job + "slides/1.png").status_code == 404                     # no PowerPoint here: a blank slide
+        shot = c.get(job + "slides/1.png", headers={"Origin": PANEL})             # no PowerPoint here: a blank slide,
+        assert shot.status_code == 404 and shot.json()["detail"] == \
+            "slide pictures need PowerPoint or LibreOffice where the tool runs"    # and the panel can read why
+        assert shot.headers["access-control-allow-origin"] == PANEL
 
         assert c.post(job + "apply", json={"choices": {"0": "made-up"}}).json()["detail"] == \
             "choose approved outline icons from the library, or upload one"
