@@ -108,7 +108,7 @@ def test_start_icon_run_opens_the_panel_and_gives_claude_the_link_for_clients_wi
         state = c.get(panel["base"] + "state", headers={"Origin": PANEL})
         assert state.json() == {"status": "waiting", "error": "", "mode": "suggest", "slides": "2,3", "attached": None,
                                 "result": None}
-        assert told["deck"] is None
+        assert "attached_deck" not in told
         assert state.headers["access-control-allow-origin"] == PANEL
 
         browser = c.get(panel["link"])                                  # the same page, in a browser
@@ -149,25 +149,25 @@ def test_a_deck_run_in_the_page_comes_back_as_a_copy_with_icons(env):
 NO_FILE = {"deck": ("", b"", "application/octet-stream")}   # what the page's form sends when no file is chosen
 
 
-def test_a_deck_attached_in_the_chat_is_in_the_panel_when_it_opens(env):
+def test_the_panel_opens_first_and_picks_up_the_deck_attached_in_the_chat(env):
     deck = env / "deck.pptx"
     make_deck(deck, ["Revenue growth of 22%", "Team expansion", "Risk management"])
     with client() as c:
-        sent = call(c, "send_attached_deck", path="/mnt/user-data/uploads/Client deck.pptx")[1]   # first the deck
-        url = shlex.split(sent["command"])[-1]
-        assert shlex.split(sent["command"]) == ["curl", "-sS", "--fail-with-body", "-F",
-                                                'deck=@"/mnt/user-data/uploads/Client deck.pptx"', url]
-        assert url.startswith(f"{BASE}/runs/{sent['run_id']}/") and url.endswith("/deck")
-        assert "start_icon_run" in sent["next"]
+        told, panel = start(c, mode="add", attached_deck="/mnt/user-data/uploads/Client deck.pptx")   # the panel
+        url = panel["base"] + "deck"
+        assert shlex.split(told["attached_deck"]["command"]) == [
+            "curl", "-sS", "--fail-with-body", "-F", 'deck=@"/mnt/user-data/uploads/Client deck.pptx"', url]
+        assert "attached_deck.command" in told["next"] and "before you answer" in told["next"]
+        state = lambda: c.get(panel["base"] + "state", headers={"Origin": PANEL}).json()
+        assert state()["attached"] == {"name": "Client deck.pptx", "ready": False}      # the panel waits for it
+        no_deck = c.post(panel["base"] + "jobs", files=NO_FILE, data={"mode": "add"}, headers={"Origin": PANEL})
+        assert no_deck.json()["detail"] == "Choose a PowerPoint deck (.pptx)."
+
         with open(deck, "rb") as f:                                        # Claude's curl, from its code tools
             arrived = c.post(url, files={"deck": ("Client deck.pptx", f, PPTX)})
         assert arrived.status_code == 200 and arrived.json()["deck"] == "Client deck.pptx"
-
-        told, panel = start(c, mode="add", run_id=sent["run_id"])          # then the panel, last: the deck is in it
-        assert told["run_id"] == sent["run_id"] and told["deck"] == "Client deck.pptx" and "click Run" in told["next"]
-        assert panel["base"] + "deck" == url and panel["mode"] == "add"
-        state = c.get(panel["base"] + "state", headers={"Origin": PANEL}).json()
-        assert state["attached"] == {"name": "Client deck.pptx", "ready": True} and state["mode"] == "add"
+        assert "click Run" in arrived.json()["next"]
+        assert state()["attached"] == {"name": "Client deck.pptx", "ready": True} and state()["status"] == "waiting"
 
         for _ in range(2):                                                 # Run, and Run again: it stays
             r = c.post(panel["base"] + "jobs", files=NO_FILE, data={"mode": "add"}, headers={"Origin": PANEL})
@@ -176,25 +176,31 @@ def test_a_deck_attached_in_the_chat_is_in_the_panel_when_it_opens(env):
         assert icons_in(env / "jobs" / told["run_id"] / "attached" / "Client deck.pptx") == []
 
         make_deck(deck, ["Team expansion", "Risk management"])             # a file chosen in the panel still wins
-        assert [p["icon"]["id"] for p in run_deck(c, panel["base"], deck, "Other.pptx", mode="add").json()["picks"]]             == ["people-team", "risk-shield"]
+        assert [p["icon"]["id"] for p in run_deck(c, panel["base"], deck, "Other.pptx", mode="add").json()["picks"]] \
+            == ["people-team", "risk-shield"]
 
         (env / "notes.txt").write_text("not a deck")
         with open(env / "notes.txt", "rb") as f:
             assert c.post(url, files={"deck": ("notes.pptx", f, PPTX)}).status_code == 400
         with open(deck, "rb") as f:
             assert c.post(panel["link"][:-3] + "abc/deck", files={"deck": ("d.pptx", f, PPTX)}).status_code == 404
-        assert call(c, "send_attached_deck", path="/mnt/user-data/uploads/old.ppt")[0]
-        assert call(c, "start_icon_run", run_id="000000000000")[0]
+        assert call(c, "start_icon_run", attached_deck="/mnt/user-data/uploads/old.ppt")[0]
 
 
-def test_when_the_attached_deck_doesnt_arrive_the_panel_still_opens_and_claude_says_why(env):
+def test_claude_is_told_the_panel_extension_on_every_handshake_version(env):
     with client() as c:
-        sent = call(c, "send_attached_deck", path="/mnt/user-data/uploads/deck.pptx")[1]   # the curl was blocked
-        told, panel = start(c, run_id=sent["run_id"])
-        assert told["deck"] is None and "didn't come through" in told["next"] and "127.0.0.1:8001" in told["next"]
-        assert c.get(panel["base"] + "state").json()["attached"] is None
-        no_deck = c.post(panel["base"] + "jobs", files=NO_FILE, data={"mode": "replace"})
-        assert no_deck.json()["detail"] == "Choose a PowerPoint deck (.pptx)."
+        for version in ("2025-06-18", "2025-11-25"):
+            init = c.post("/mcp", headers={**MCP, "MCP-Protocol-Version": version}, json={
+                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                    "protocolVersion": version, "clientInfo": {"name": "claude-ai", "version": "1"},
+                    "capabilities": {"extensions": {"io.modelcontextprotocol/ui": {
+                        "mimeTypes": ["text/html;profile=mcp-app"]}}}}})
+            result = init.json()["result"]
+            assert result["protocolVersion"] == version and result["capabilities"]["tools"] is not None
+            assert result["capabilities"]["extensions"] == {
+                "io.modelcontextprotocol/ui": {"mimeTypes": ["text/html;profile=mcp-app"]}}
+            assert int(init.headers["content-length"]) == len(init.content)
+        assert "extensions" not in json.dumps(rpc(c, "tools/list"))           # only the handshake changes
 
 
 def test_an_attached_decks_path_reaches_curl_whole():
@@ -354,8 +360,7 @@ def test_the_hosted_connector_needs_no_sign_in_only_its_secret_address(env, monk
         assert c.post("/mcp/" + "y" * 40, headers=MCP, json=listed).status_code == 404
         assert c.get("/.well-known/oauth-protected-resource").status_code == 404   # Claude asks for no sign-in
         tools = c.post(f"/mcp/{SECRET}", headers=MCP, json=listed).json()["result"]["tools"]
-        assert {t["name"] for t in tools} == {"send_attached_deck", "start_icon_run", "get_icon_run", "choose_icons",
-                                                 "search_icons"}
+        assert {t["name"] for t in tools} == {"start_icon_run", "get_icon_run", "choose_icons", "search_icons"}
         r = c.post(f"/mcp/{SECRET}", headers=MCP, json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
             "name": "start_icon_run", "arguments": {}}}).json()["result"]["structuredContent"]
         assert c.get(r["link"]).status_code == 200 and c.get(r["base"] + "state").status_code == 200

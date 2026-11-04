@@ -68,6 +68,10 @@ The icon library ships with the code (`icons/`). To publish library changes, com
 Replacing an Odoo sign-in connector: edit its URL to the one above, or remove it and add it again if Claude still asks
 designers to sign in.
 
+**After a deploy that changes the tools or the panel, remove the connector and add it again.** Claude keeps each
+connector's tool list from when it was added, so changes otherwise don't reach it. The connector's page in Claude
+should then count one interactive tool (Open Prezlab Icons); if it counts none, Claude won't show the panel.
+
 **Let attached decks through.** Claude sends a deck attached to the message from its code execution sandbox, which
 reaches only the domains the organization allows. **Organization settings**, **Capabilities**, code execution's
 network access: allow specific domains and add `<service>.onrender.com`. Without it, the panel still opens, Claude
@@ -80,9 +84,10 @@ says the deck didn't come through, and designers choose it in the panel instead.
    in the add-in's Settings, Instructions, add "For icons, use the Prezlab Icons connector", so Claude doesn't
    reach for other icon sources.
 3. **Attach the deck and ask.** For example: "Replace the PL placeholders in this deck with Prezlab icons", "Add
-   Prezlab icons to slides 3 to 6", or "Suggest icons for this deck, don't add them yet". Claude sends the deck,
-   then opens the Prezlab Icons panel in the chat with the deck in it. Without an attachment (or if it didn't come
-   through), choose the deck in the panel. In PowerPoint, save the deck first, then upload the saved file.
+   Prezlab icons to slides 3 to 6", or "Suggest icons for this deck, don't add them yet". The Prezlab Icons panel
+   opens in the chat, and the deck appears in it a few seconds later, once Claude has sent it. Without an attachment
+   (or if it doesn't come through), choose the deck in the panel. In PowerPoint, save the deck first, then upload
+   the saved file.
 4. **Work in the panel**, as in the local tool: check the mode, **Run**, review the picks, **Choose flagged icons**
    (click a highlighted placeholder, then one of its closest icons, a library search result or your own upload),
    **Add chosen**, **Download deck**. Claude saves the download for you. **Full screen** gives the panel room;

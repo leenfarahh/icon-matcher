@@ -169,6 +169,7 @@
         <label>Slides (optional)<input name="slides" placeholder="e.g. 2,3,5" size="12"></label>
         <button class="primary" type="submit">Run</button>
       </div>
+      <p class="note" id="attached-note" hidden></p>
       <p class="note" id="llm-note"></p>
     </form>
     <div id="out"></div>
@@ -502,16 +503,34 @@ $("#run").onsubmit = async e => {
 };
 
 // Hosted: the deck the designer attached to their message in Claude. Claude sends it to the run from its code tools
-// (send_attached_deck) before the panel opens, and the page offers it in place of choosing a file; a file chosen here
-// still wins.
-let attached = "";   // its name
+// (start_icon_run's attached_deck) just after the panel opens; the page waits for it and then offers it in place of
+// choosing a file. The file field works all the while, and a file chosen there wins.
+let attached = null;         // {name, ready} from the run's state; lost: it didn't come
+const ATTACH_WAIT = 180e3;
 
 function drawAttached() {
-  const use = !!attached && !$("#deck").files.length;
+  const chosen = $("#deck").files.length > 0, use = !!attached && attached.ready && !chosen;
   $("#deck-field").hidden = use;
   $("#attached").hidden = !use;
   $("#deck").required = !use;
-  $("#attached-name").textContent = attached;
+  $("#attached-name").textContent = attached ? attached.name : "";
+  const note = $("#attached-note");
+  note.hidden = !attached || attached.ready || chosen;
+  if (attached) note.textContent = attached.lost ? `${attached.name} didn't come through from the chat: choose it above.`
+    : `Getting ${attached.name} from the chat… (or choose it above)`;
+}
+
+async function awaitAttached() {
+  const until = Date.now() + ATTACH_WAIT;
+  while (attached && !attached.ready && !attached.lost) {
+    await new Promise(r => setTimeout(r, 1500));
+    try {
+      const s = await (await fetch(U("state"))).json();
+      if (s.attached) attached = s.attached;
+    } catch (e) { /* asked again next time */ }
+    if (!attached.ready && Date.now() > until) attached.lost = true;
+    drawAttached();
+  }
 }
 if (HOST) $("#deck").addEventListener("change", drawAttached);
 
@@ -858,9 +877,10 @@ async function restore() {   // hosted: the mode, slides and deck Claude set for
     const s = await res.json();
     $("#run").elements.mode.value = s.mode;
     $("#run").elements.slides.value = s.slides;
-    if (s.attached && s.attached.ready) {
-      attached = s.attached.name;
+    if (s.attached) {
+      attached = s.attached;
       drawAttached();
+      awaitAttached();
     }
     if (s.result) renderResult(s.result);
   } catch (e) { /* the form still works */ }
