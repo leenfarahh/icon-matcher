@@ -158,6 +158,7 @@ def test_the_panel_opens_first_and_picks_up_the_deck_attached_in_the_chat(env):
         assert shlex.split(told["attached_deck"]["command"]) == [
             "curl", "-sS", "--fail-with-body", "-F", 'deck=@"/mnt/user-data/uploads/Client deck.pptx"', url]
         assert "attached_deck.command" in told["next"] and "before you answer" in told["next"]
+        assert {k: panel[k] for k in told} == told      # also for Claude apps that read structuredContent, not text
         state = lambda: c.get(panel["base"] + "state", headers={"Origin": PANEL}).json()
         assert state()["attached"] == {"name": "Client deck.pptx", "ready": False}      # the panel waits for it
         no_deck = c.post(panel["base"] + "jobs", files=NO_FILE, data={"mode": "add"}, headers={"Origin": PANEL})

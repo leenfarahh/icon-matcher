@@ -260,9 +260,10 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
             f"choose the deck in the panel instead, and that a Claude admin can allow {host} for code execution so "
             "attached decks come straight through. Only where no panel shows (the PowerPoint add-in, Claude Code), "
             "give them the link: it opens the same page in the browser, with the deck.")
-    # The panel reads structuredContent (Claude doesn't): the address it works against.
+    # The panel reads structuredContent for the address it works against (base). Claude reads the text in claude.ai,
+    # but some Claude apps (Cowork, Claude Code) hand it structuredContent instead: both carry the instructions.
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(told, indent=2))],
-                          structured_content={"run_id": run_id, "base": link + "/", "link": link, "mode": mode})
+                          structured_content={**told, "base": link + "/", "mode": mode})
 
 
 def get_icon_run(run_id: str) -> dict:
