@@ -58,8 +58,8 @@ goes there): the designer clicks one, chooses from its closest icons, searches t
 of their own (SVG, or PNG/JPG traced; checked like a library upload, kept with the run, not added to the
 library), sees it in place, and "Add chosen" writes a new copy (`GET /jobs/{id}/slides/{n}.png`,
 `POST /jobs/{id}/uploads`, `POST /jobs/{id}/apply` with `choices`). Slide pictures are made by
-PowerPoint (`app/render.py`), so they need PowerPoint on the machine running the tool; without it the
-placeholders show on a blank slide;
+PowerPoint, or LibreOffice where PowerPoint isn't installed (`app/render.py`); with neither, the
+placeholders show on a blank slide, with the reason under it;
 "Library" browses `icons.json` by tag (English or Arabic) and shows the house pick for a concept;
 "Add icon" uploads an SVG with its fields, checks it against the same rules as `pytest`, and appends it
 to `icons.json` (`POST /library/icons`). PNG, JPG, WebP, GIF and BMP uploads are traced into a one-color

@@ -45,10 +45,11 @@ version running. Its address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICO
 (`/var/data/runs/auth.sqlite3`) is no longer read and can be deleted from the service's **Shell**. Then do step 2 with
 the new address.
 
-**A service created on the Python runtime** (before slide pictures) moves to Docker in place, keeping its address,
-settings and disk: **Settings**, **Build & Deploy**, **Source**, **Edit**, Runtime **Docker**, Dockerfile path
-`./Dockerfile`, Docker command empty, **Save**; then **Manual Deploy**. The first build takes 5 to 10 minutes (it
-installs LibreOffice); later ones reuse it.
+**A service created on the Python runtime** (before slide pictures; it shows a Build Command and a Start Command)
+has no LibreOffice, and Render can't switch it to Docker: its settings offer no runtime. Create a new service from
+the Blueprint as above, then add the connector again in claude.ai with its address, have the Owner allow its domain
+for code execution (step 2), and delete the old service (runs last a day, so nothing is lost). The first build takes
+5 to 10 minutes (it installs LibreOffice); later ones reuse it.
 
 Optional settings (`.env.example` lists them all): `ICON_RUN_TTL_HOURS` (24), `ICON_MAX_DECK_MB` (150),
 `ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
@@ -134,7 +135,7 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
 - One instance: runs live on its disk, and decks are processed there, two at a time.
 - Attached decks need Claude's code execution with network access to the connector (step 2). Where Claude has no
   code execution, designers choose the deck in the panel.
-- Slide pictures need PowerPoint on the server, so on Render the review shows the flagged placeholders on a blank
-  slide (the local test UI shows the real slide).
+- Slide pictures on Render come from LibreOffice, whose fonts can differ a little from PowerPoint's. Without it (a
+  Python-runtime service) the review shows the flagged placeholders on a blank slide and says why under it.
 - An inline panel has a height limit; long results fit better in **Full screen**.
 - The panel's client is vendored (`app/static/vendor/`, MCP Apps 1.7.5); updating it is a file copy (see its README).
