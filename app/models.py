@@ -1,7 +1,20 @@
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from . import config
+
+
+def label_of(text: str) -> str:
+    """What a label says, case, numbers and punctuation aside: "2-4% savings" and "10-20% savings" say the same.
+    One icon stands for one label in a deck, and a label repeated on other slides gets the same icon."""
+    return " ".join(re.findall(r"[^\W\d_]+", text.lower())) or " ".join(text.lower().split())
+
+
+def headline(text: str, n: int = 40) -> str:
+    """A label's first line, for messages."""
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return " ".join(first.split())[:n]
 
 
 def allowed_styles(style: str, allow_filled: bool = False) -> set[str]:
@@ -128,3 +141,4 @@ class Report:
     gaps: list[str] = field(default_factory=list)
     output_file: Optional[str] = None
     slide_size: tuple = (13.333, 7.5)   # inches (width, height)
+    existing: list = field(default_factory=list)   # library icons already in the deck: {"slide", "icon_id"}

@@ -1,18 +1,18 @@
 """Steps 3-4: check and assign icons by the selection rules. With Claude, each item comes with its one pick (or ""
 when nothing fits), and the rules here are a check on it: the library and regional rules, an icon once per slide,
-one family per set, all or nothing. A label already given an icon elsewhere in the deck keeps that icon where the
-set still holds. With keyword matching, each item comes with up to three ideas, shortlisted from the concept map
-and tags, and a set is assigned together so two items that want the same icon fall back to another idea."""
-import re
+one family per set, all or nothing, and one icon per label deck-wide: a label already given an icon elsewhere in the
+deck keeps that icon where the set still holds, and an icon standing for one label never goes on a different one.
+With keyword matching, each item comes with up to three ideas, shortlisted from the concept map and tags, and a set
+is assigned together so two items that want the same icon fall back to another idea."""
 from collections import defaultdict
 
 from . import config
-from .models import DeckSettings, Flag, IconRecord, Item, Pick
+from .models import DeckSettings, Flag, IconRecord, Item, Pick, headline, label_of
 
 
 def label(item: Item) -> str:
     """What an item says, numbers and punctuation aside: "2-4% savings" and "10-20% savings" say the same."""
-    return " ".join(re.findall(r"[^\W\d_]+", item.text.lower())) or " ".join(item.text.lower().split())
+    return label_of(item.text)
 
 
 def _unsure(item: Item) -> str:
@@ -28,6 +28,7 @@ class Selector:
         self.used_by: dict[str, str] = {}     # icon id -> the concept it first stood for in this deck
         self.on_slide: set[tuple] = set()     # (slide, icon id): an icon is used once per slide
         self.labels: dict[str, tuple] = {}    # label -> (concept, icon id, slide): the same words, the same icon
+        self.owners: dict[str, tuple] = {}    # icon id -> (label, slide, headline): one icon, one label, deck-wide
 
     def seed_ledger(self, existing: list[dict], concept_of_icon: dict[str, str] | None = None):
         """Existing icons placed earlier keep their concept. TODO: recover concepts for unnamed icons."""
@@ -35,12 +36,30 @@ class Selector:
             if e["icon_id"] and concept_of_icon and e["icon_id"] in concept_of_icon:
                 self._remember(concept_of_icon[e["icon_id"]], e["icon_id"], e["slide"])
 
-    def _remember(self, concept, icon_id, slide=None, said=None):
+    def _remember(self, concept, icon_id, slide=None, said=None, text=""):
         self.ledger.setdefault(concept, icon_id)
         self.used_by.setdefault(icon_id, concept)
         self.on_slide.add((slide, icon_id))
         if said:
             self.labels.setdefault(said, (concept, icon_id, slide))
+            self.owners.setdefault(icon_id, (said, slide, headline(text)))
+
+    def _owner_elsewhere(self, icon_id: str, item: Item) -> tuple | None:
+        """(label, slide, headline) of the different label this icon already stands for in the deck, or None."""
+        owner = self.owners.get(icon_id)
+        return owner if owner and owner[0] != label(item) else None
+
+    def _taken_by_others(self, item: Item) -> list[str]:
+        """Icons that fit the item's ideas but already stand for another label in the deck (one icon per label)."""
+        found = []
+        for c in dict.fromkeys(i for i in (item.icon_pick, *(item.concepts or [item.concept])) if i):
+            key = self.lib.lookup(c)
+            ids = [self.lib.concept_map[key]["id"], *self.lib.concept_map[key]["alts"]] if key else []
+            ids += [i.id for i in self.lib.search(c, self.settings.styles, arabic=item.rtl)]
+            if self.lib.get(c):
+                ids.insert(0, c)
+            found += [i for i in ids if self._owner_elsewhere(i, item) and i not in found]
+        return found
 
     # --- rules ---------------------------------------------------------------
     def _allowed(self, icon: IconRecord, item: Item, concept: str | None = None) -> bool:
@@ -52,6 +71,8 @@ class Selector:
             return False
         text = item.text.lower()
         if any(a.lower() in text or a.lower() == (concept or "") for a in icon.avoid_for):
+            return False
+        if self._owner_elsewhere(icon.id, item):            # one icon per label: it already means something else
             return False
         return (item.slide, icon.id) not in self.on_slide   # style guide: an icon once per slide
 
@@ -167,8 +188,9 @@ class Selector:
             if m.icon_pick == "":
                 return m, _unsure(m) if m.unsure else "Claude found no icon that genuinely fits"
             if m.icon_pick and not opts:
-                icon = self.lib.get(m.icon_pick)
-                why = ("it is already on this slide" if (m.slide, m.icon_pick) in self.on_slide else
+                icon, owner = self.lib.get(m.icon_pick), self._owner_elsewhere(m.icon_pick, m)
+                why = (f"it already stands for '{owner[2]}' on slide {owner[1]} (one icon per label)" if owner else
+                       "it is already on this slide" if (m.slide, m.icon_pick) in self.on_slide else
                        f"it is marked not for {', '.join(icon.avoid_for)}" if icon and icon.avoid_for else
                        "it breaks the style or regional rules")
                 return m, f"Claude picked {m.icon_pick}, but {why}"
@@ -176,6 +198,10 @@ class Selector:
                 return m, "no clear metaphor"
             if not opts:
                 ideas = "', '".join(dict.fromkeys(m.concepts or [m.concept]))
+                if taken := self._taken_by_others(m):
+                    used = ", ".join(f"{i} (for '{self.owners[i][2]}', slide {self.owners[i][1]})" for i in taken[:3])
+                    return m, (f"the icons that fit '{ideas}' already stand for other labels in this deck: {used}; "
+                               "one icon per label")
                 return m, f"nothing suitable in the library for '{ideas}'"
         if self._assign(choices):
             families = " and ".join(sorted({o[2].family for opts in choices for o in opts if o[2].family}))
@@ -194,11 +220,11 @@ class Selector:
         return None, "no combination of icons fits every item"
 
     def snapshot(self):
-        return dict(self.ledger), dict(self.used_by), set(self.on_slide), dict(self.labels)
+        return dict(self.ledger), dict(self.used_by), set(self.on_slide), dict(self.labels), dict(self.owners)
 
     def restore(self, snapshot):
         """Release the picks made since the snapshot (their set was not placed after all)."""
-        self.ledger, self.used_by, self.on_slide, self.labels = (type(s)(s) for s in snapshot)
+        self.ledger, self.used_by, self.on_slide, self.labels, self.owners = (type(s)(s) for s in snapshot)
 
     def pick_set(self, members: list[Item]) -> tuple[list[Pick], list[Flag]]:
         """Restraint: a set gets icons on every member or none, each icon once on the slide, all one family."""
@@ -224,7 +250,7 @@ class Selector:
                 why += (f"; its first idea '{first}' had no free icon on this slide" if had
                         else f"; nothing in the library for its first idea '{first}'") + f", so '{c}' was used"
             m.concept = c
-            self._remember(c, icon.id, m.slide, said)
+            self._remember(c, icon.id, m.slide, said, m.text)
             picks.append(Pick(m, icon, why, alts[:2]))
         return picks, []
 

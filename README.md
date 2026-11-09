@@ -132,9 +132,12 @@ first call.
 The code checks every set's choices against the rules it can verify (names in the library, no repeats, one
 family, all or nothing). Sets that break one go back to Claude **once**, with their earlier choices and the rule
 broken; a set that still breaks one is flagged with the reason. The selector then applies the hard rules (style,
-`avoid_for`, regional block list, an icon once per slide, all or none per set) and **same label, same icon**
-deck-wide: a recurring heading keeps the icon it got first, where its set still holds. A set's icons only count
-as taken once it's placed.
+`avoid_for`, regional block list, an icon once per slide, all or none per set) and **one icon per label**
+deck-wide: a recurring heading keeps the icon it got first, where its set still holds, and an icon standing for
+one label never goes on a different one (Claude is told the same, and a batch that breaks it goes back once). A
+set's icons only count as taken once it's placed. Flagged placeholders are never offered an icon placed for
+another label, and each label gets its own first option; a designer who chooses a used icon anyway gets a
+warning in the panel and in `choose_icons`.
 
 Without a key, or when the API fails, keyword matching finds up to three ideas per item and the concept map and
 tags find their icons, with the same rules.
@@ -145,7 +148,7 @@ tags find their icons, with the same rules.
 | --- | --- | --- |
 | 1. Read deck, existing icons, settings | `deck.py` | Rows of boxes = cards, multi-paragraph box = list, lone short box = hero |
 | 2. One icon per item | `concepts.py` | Claude picks from the icon library by meaning (candidate sets only), one retry for sets that break a rule; keyword fallback |
-| 3-4. Check by rules | `selector.py` | Style, avoid_for, regional blocklist, an icon once per slide, one family per set, same label same icon, all-or-none sets; concept map and tags for keyword matching |
+| 3-4. Check by rules | `selector.py` | Style, avoid_for, regional blocklist, an icon once per slide, one family per set, one icon per label, all-or-none sets; concept map and tags for keyword matching |
 | 5. Place and insert | `placement.py`, `icon_tools.py` | SVG + PNG fallback, recolored, RTL flip only when `rtl_flip` |
 | 6. Report | `report.py` | Markdown + JSON |
 

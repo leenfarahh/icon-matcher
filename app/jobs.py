@@ -12,7 +12,7 @@ from pathlib import Path
 from . import config, library_edit, pipeline, render, report
 from .icon_tools import recolor_svg
 from .library import Library
-from .models import allowed_styles
+from .models import allowed_styles, headline, label_of
 
 SAVED_REPORT = "report.json"
 UPLOADS = "uploads"
@@ -89,7 +89,34 @@ def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, 
             p["svg_file"] = str(upload)
     out, skipped = pipeline.insert(job_dir / rep["deck_file"], library, placements, rep["settings"])
     shutil.rmtree(job_dir / PREVIEWS, ignore_errors=True)   # slide pictures now show the new copy
-    return {"added": len(placements) - len(skipped), "skipped": skipped, "output_file": out.name}
+    return {"added": len(placements) - len(skipped), "skipped": skipped, "output_file": out.name,
+            "warnings": reuse_warnings(rep, chosen, choices)}
+
+
+def reuse_warnings(rep: dict, picks: list[int], choices: dict[int, str]) -> list[str]:
+    """One icon per label: a warning for each icon a designer chose for a placeholder that the copy already shows
+    for a different label (a pick, or an icon chosen for another placeholder), or that was in the deck before the
+    run (its label unknown). The designer's choice stands; the warning says what a client may read into it."""
+    lab = lambda item: item.get("label") or label_of(item["text"])
+    owner = {}   # icon -> the item it stands for: its first use (the picks first, then choices in flag order)
+    for p in (rep["picks"][n] for n in picks):
+        owner.setdefault(p["icon"]["id"], p["item"])
+    existing = {}
+    for e in rep.get("existing", []):
+        existing.setdefault(e["icon_id"], e["slide"])
+    out = []
+    for n, icon_id in sorted(choices.items()):
+        item = rep["flags"][n]["item"]
+        name = "your uploaded icon" if icon_id.startswith("upload:") else icon_id
+        where = f'"{headline(item["text"])}" (slide {item["slide"]})'
+        first = owner.setdefault(icon_id, item)
+        if first is not item and lab(first) != lab(item):
+            out.append(f'{where}: {name} is already used for "{headline(first["text"])}" on slide {first["slide"]}. '
+                       "Clients may read the two as the same thing, so choose another icon unless that's intended.")
+        elif first is item and icon_id in existing:
+            out.append(f"{where}: {name} is already in the deck on slide {existing[icon_id]}. Check it stands for "
+                       "the same thing there.")
+    return out
 
 
 def library_index(library: Library) -> dict:

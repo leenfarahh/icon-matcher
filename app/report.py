@@ -1,7 +1,7 @@
 """Step 6: the report, as Markdown (for chat / the UI) and a dict (for the API)."""
 from dataclasses import asdict
 
-from .models import Report
+from .models import Report, label_of
 
 
 def to_markdown(r: Report) -> str:
@@ -24,6 +24,11 @@ def to_markdown(r: Report) -> str:
 
 
 def to_dict(r: Report) -> dict:
+    """The report, with each item's label (label_of) so a designer's choices can be checked for one icon per label
+    without reading the deck again (jobs.reuse_warnings, the page)."""
     d = asdict(r)
+    for kind in ("picks", "flags"):
+        for obj, out in zip(getattr(r, kind), d[kind]):
+            out["item"]["label"] = label_of(obj.item.text)
     d["markdown"] = to_markdown(r)
     return d

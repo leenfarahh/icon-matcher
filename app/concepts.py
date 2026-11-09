@@ -2,7 +2,8 @@
 enhancer): what it means to the deck's audience and what an icon for it could draw, once per distinct label. Then it
 picks ONE library icon per item by meaning, from its own knowledge of visual metaphors and that brief (it gets the
 icon library, not the concept map). Each candidate set goes to it as one slide entry, and it follows the rules in
-SYSTEM: exact library names, no icon twice on a slide, one style family per slide, all or nothing, and an honest
+SYSTEM: exact library names, one icon per label (never twice on a slide, never on two different labels), one style
+family per slide, all or nothing, and an honest
 fit (1-5) for each pick. Without a key, or when the API fails, keyword matching finds up to three ideas and the
 selector looks their icons up in the concept map and tags. For PL placeholders still left without an icon, a second
 request (CLOSEST) ranks the nearest icons for a designer to choose from."""
@@ -12,7 +13,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config
-from .models import Item, style_set
+from .models import Item, headline, label_of, style_set
 
 SYSTEM = """You choose icons for presentation slides. You receive an ICON LIBRARY and a set of SLIDES. Each slide
 has numbered points (a headline and a short gist). For every point, pick the ONE library icon that best
@@ -42,7 +43,10 @@ How to choose, in this order
 Rules
 3. Every icon you return must appear in the ICON LIBRARY, copied exactly as written. Never invent, shorten,
    translate or combine names.
-4. Do not use the same icon twice on one slide.
+4. One icon, one label. Do not use the same icon twice on one slide, and never give one icon to points with
+   different labels anywhere in SLIDES: a reader takes the same icon to mean the same thing, so two different
+   categories sharing an icon look like an error. A label repeated on other slides (the same category shown again)
+   gets the same icon each time.
 5. Keep each slide consistent: {style_rule}
 6. All or nothing per slide: if any point on a slide gets "" (no icon at all), return "" for every point on that slide. A
    half-matched row of icons looks worse than the original icons.
@@ -150,10 +154,16 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
             data = _label(client, system, batch, fits=fits)
         except (anthropic.APIError, ValueError) as e:
             return (batch, *_failure(e))
-        notes = {}
+        notes, owners = {}, {}   # owners: icon -> its first point in the batch (one icon per label)
         for g in _groups(batch):   # sets whose choices break a rule go back once, with what they broke
             got = [data.get(_key(i), "") for i in g]
-            broken = _broken(got, known)
+            clashes = []
+            for i, pick in zip(g, got):   # within a set, a repeat is already "used twice" (_broken)
+                first = owners.setdefault(pick, i) if pick else i
+                if first is not i and first not in g and label_of(first.text) != label_of(i.text):
+                    clashes.append(f'rule 4 ("{pick}" is already the icon for "{headline(first.text)}" on deck '
+                                   f'slide {first.slide})')
+            broken = ", ".join(filter(None, [_broken(got, known), *dict.fromkeys(clashes)]))
             if broken:
                 earlier = ", ".join(f'{p} = "{pick}"' for p, pick in enumerate(got))
                 notes[_key(g[0])] = f"Earlier choices: {earlier}. Broke {broken}."

@@ -24,7 +24,7 @@ you can judge the cases the rule doesn't name.
 | Size | Fixed tiers (card icon, list icon, hero icon) set per brand |
 | Color | Single brand color or text color; no multicolor |
 | Restraint | Skip icons where no clear metaphor exists; flag instead of forcing |
-| Consistency | Same concept = same icon, deck-wide; never the same icon twice on a slide |
+| Consistency | One icon per label, deck-wide: a repeated label keeps its icon, a different label never shares it; never the same icon twice on a slide |
 | Regional | Avoid hand gestures, religious symbols, alcohol, pig imagery, and maps showing borders |
 
 ## 2. Choosing the icon
@@ -179,13 +179,16 @@ ask for a brand tier rather than using a one-off size inside a set.
 
 ## 6. Consistency across the deck
 
-- Same concept = same icon on every slide. "Security" on slide 3 and slide 11
-  gets the same shield. The same label (a recurring heading) keeps its icon too.
+- One icon, one label. The same label (a recurring heading or category) gets
+  the same icon on every slide, and an icon that stands for one label never
+  goes on a different label anywhere in the deck. Readers learn icon meanings
+  as they go: two categories sharing an icon read as the same thing, and
+  clients flag it as reuse. Labels match on their words, case, numbers and
+  punctuation aside.
 - Never use the same icon twice on one slide, even for items whose ideas are
   close.
-- Across the deck, avoid reusing one icon for different concepts where the
-  library offers a distinct fitting icon; readers learn icon meanings as they
-  go.
+- If a designer chooses an icon already used for another label, the tool
+  warns them; their choice stands.
 - Icons in a set share one tier, one placement, one alignment and one family.
 - When adding to a deck that already has our icons (`library_id` in the
   inspection), reuse their concept-to-icon choices.

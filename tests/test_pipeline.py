@@ -971,21 +971,81 @@ def test_room_the_designer_left_before_the_text_is_used_as_is(tmp_path):
     assert all(p.left >= p.item.left and p.left + p.size <= p.item.tx_left for p in r.picks)
 
 
-def test_an_icon_can_mean_another_thing_on_another_slide_but_never_on_the_same_slide(tmp_path):
+def test_one_icon_per_label_a_repeated_label_keeps_its_icon_and_no_other_label_gets_it(tmp_path):
     lib = make_library(tmp_path / "lib")
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
-    for y, texts in ((3, ("Team expansion", "Revenue growth")), (3, ("Talent pipeline", "Risk management")),
-                     (5.6, ("Team culture", "Talent pipeline"))):    # slide 3 is built differently (lower down)
+    for y, texts in ((1.2, ("Team expansion", "Revenue growth")), (3.2, ("Talent pipeline", "Risk management")),
+                     (6.0, ("TEAM EXPANSION", "Risk management"))):    # each slide built differently: decided alone
         slide = prs.slides.add_slide(prs.slide_layouts[6])
         for x, text in zip((2, 7), texts):
             slide.shapes.add_textbox(Inches(x), Inches(y), Inches(3), Inches(0.6)).text_frame.text = text
     prs.save(tmp_path / "d.pptx")
     r = pipeline.run(tmp_path / "d.pptx", lib, "suggest")
-    by_slide = {(p.item.slide, p.item.text): p for p in r.picks}
-    talent = by_slide[(2, "Talent pipeline")]                      # people-team already means "team" on slide 1
-    assert talent.icon.id == "people-team" and "elsewhere in the deck" in talent.reason
-    assert not any(p.item.slide == 3 for p in r.picks)             # slide 3 would need it for two meanings
+    assert {(p.item.slide, p.item.text): p.icon.id for p in r.picks} == {
+        (1, "Team expansion"): "people-team", (1, "Revenue growth"): "finance-growth-chart",
+        (3, "TEAM EXPANSION"): "people-team", (3, "Risk management"): "risk-shield"}    # the same label, any case
+    talent = next(f for f in r.flags if f.item.text == "Talent pipeline")   # people-team already means "team"
+    assert ("the icons that fit 'talent' already stand for other labels in this deck: people-team (for 'Team "
+            "expansion', slide 1); one icon per label") in talent.reason
+
+
+def test_claude_is_asked_again_when_it_gives_one_icon_to_two_labels(tmp_path):
+    from app import concepts
+    from app.models import Item
+    items = [Item(slide=s, shape_id=k, text=t, kind="card", left=k, top=0, w=1, h=1)
+             for k, (s, t) in enumerate([(1, "Content production"), (2, "Creative media schemes"),
+                                         (3, "Content production")])]
+    fake = FakeClaude(icon=lambda text: "people-team" if "media" in text and fake.calls > 1   # asked again: another
+                      else "finance-growth-chart")                                            # icon for that label
+    concepts._extract_llm(items, make_library(tmp_path / "lib"), "outline", client=fake)
+    assert fake.calls == 2                                   # once, then the clashing slide again with the rule
+    assert [i.icon_pick for i in items] == ["finance-growth-chart", "people-team", "finance-growth-chart"]
+    retry = fake.sent["messages"][0]["content"]
+    assert 'rule 4 ("finance-growth-chart" is already the icon for "Content production" on deck slide 1)' in retry
+    assert [p for _, _, p in sent_points(retry)] == ["Creative media schemes"]   # the repeated label is fine
+
+
+def test_a_designer_who_reuses_an_icon_for_another_label_is_warned():
+    from app import jobs
+    flag = lambda slide, text: {"item": {"slide": slide, "text": text}, "spot": {}}
+    rep = {"picks": [{"icon": {"id": "people-team"}, "item": {"slide": 1, "text": "Content creation/\nproduction",
+                                                              "label": "content creation production"}}],
+           "flags": [flag(2, "CREATIVE MEDIA SCHEMES"), flag(3, "Content creation / production"),
+                     flag(4, "Media hubs"), flag(5, "Innovation seed funds")],
+           "existing": [{"slide": 6, "icon_id": "risk-shield"}]}
+    warnings = jobs.reuse_warnings(rep, [0], {0: "people-team", 1: "people-team", 2: "upload:abc", 3: "risk-shield"})
+    assert warnings == [
+        '"CREATIVE MEDIA SCHEMES" (slide 2): people-team is already used for "Content creation/" on slide 1. '
+        "Clients may read the two as the same thing, so choose another icon unless that's intended.",
+        '"Innovation seed funds" (slide 5): risk-shield is already in the deck on slide 6. Check it stands for the '
+        "same thing there."]                       # the same label again (any case, spacing) is no reuse
+    assert jobs.reuse_warnings(rep, [], {0: "people-team"}) == []         # not in the copy: suggest mode, unticked
+    assert jobs.reuse_warnings(rep, [], {2: "upload:abc", 3: "upload:abc"})[0].startswith(
+        '"Innovation seed funds" (slide 5): your uploaded icon is already used for "Media hubs" on slide 4')
+
+
+def test_placeholder_options_keep_one_icon_per_label(tmp_path):
+    from app.models import DeckSettings, Flag, IconRecord, Item, Pick
+    lib = make_library(tmp_path / "lib")
+    prs = Presentation()
+    for _ in range(3):
+        prs.slides.add_slide(prs.slide_layouts[6])
+
+    def item(slide, text):
+        return Item(slide=slide, shape_id=slide, text=text, kind="card", left=1, top=1, w=1, h=1,
+                    placeholder={"id": 99, "box": (1, 1, 0.5, 0.5), "ids": [99]})
+    placed = Pick(Item(slide=1, shape_id=5, text="Risk management", kind="card", left=5, top=1, w=1, h=1),
+                  lib.get("risk-shield"), "", [])
+    flags = [Flag(item(1, "Revenue growth"), "", ["finance-growth-chart", "risk-shield"]),
+             Flag(item(2, "Growth team"), "", ["finance-growth-chart", "people-team", "risk-shield"]),
+             Flag(item(3, "REVENUE GROWTH"), "", ["people-team", "finance-growth-chart"])]
+    settings = DeckSettings("outline", "4F81BD", {}, {})
+    pipeline._offer(flags, [placed], lib, settings, prs)
+    assert [f.options for f in flags] == [
+        ["finance-growth-chart"],                  # risk-shield already stands for "Risk management": never offered
+        ["people-team", "finance-growth-chart"],   # a different label: the growth chart is the first label's first
+        ["finance-growth-chart", "people-team"]]   # the same label again: offered the same icon first
 
 
 def test_near_synonyms_in_a_set_fall_back_to_their_next_idea(tmp_path):
@@ -1297,7 +1357,7 @@ def placeholder_library(root):
 def placeholder_deck(path, nested=True):
     """Slide 1: three headings, each with a PL logo above it (moved, resized, recolored); the third card is a
     group the designer then stretched. A look-alike logo with a different P stands by itself. Slide 2: plain
-    headings, no placeholders."""
+    headings, no placeholders, repeating two of slide 1's (one icon per label: they keep their icons there)."""
     from pptx.enum.dml import MSO_THEME_COLOR
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
@@ -1316,7 +1376,7 @@ def placeholder_deck(path, nested=True):
     decoy = [(0, 0), (40, 0), (55, 20), (40, 50), (15, 50), (15, 100), (0, 100)]
     pl_logo(slide.shapes, 6, 5.5, 0.6, p_letter=decoy)
     slide2 = prs.slides.add_slide(prs.slide_layouts[6])
-    for x, text in ((2, "Talent pipeline"), (7, "Revenue growth")):
+    for x, text in ((2, "Team expansion"), (7, "Revenue growth")):
         slide2.shapes.add_textbox(Inches(x), Inches(4), Inches(3), Inches(0.6)).text_frame.text = text
     prs.save(path)
 
@@ -1404,7 +1464,8 @@ def test_add_mode_fills_placeholders_and_finds_spots_only_on_other_slides(tmp_pa
     r = pipeline.run(tmp_path / "d.pptx", lib, "suggest")
     on_one = [p for p in r.picks if p.item.slide == 1]
     assert len(on_one) == 3 and all(p.item.placeholder for p in on_one)
-    assert any(p.item.slide == 2 for p in r.picks)                  # no placeholders there: it finds the spots
+    assert {(p.item.text, p.icon.id) for p in r.picks if p.item.slide == 2} == {   # no placeholders there: it finds
+        ("Team expansion", "people-team"), ("Revenue growth", "finance-growth-chart")}  # the spots; labels keep icons
     saved = json.loads(json.dumps(report.to_dict(r)))
     out, _ = pipeline.insert(tmp_path / "d.pptx", lib, pipeline.placements_from_report(saved, [0]), saved["settings"])
     assert len([s for s in Presentation(out).slides[0].shapes if s.name == "Group"]) == 3   # one logo replaced

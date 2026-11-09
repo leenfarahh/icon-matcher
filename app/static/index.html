@@ -118,6 +118,7 @@
   .tile { font: inherit; font-size: 11px; display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
   .tile:hover { border-color: var(--accent); }
   .tile.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
+  .tile .used { font-size: 10px; color: var(--warn); font-weight: 600; }
   .chooser-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .upload { position: relative; display: inline-flex; width: fit-content; margin-top: 2px; padding: 7px 16px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 400; cursor: pointer; }
   .upload:hover { border-color: var(--accent); }
@@ -717,9 +718,42 @@ const iconSrc = (id, color = "") => U((id.startsWith("upload:")
   ? `jobs/${encodeURIComponent(rv.r.job)}/uploads/${encodeURIComponent(id.slice(7))}.svg`
   : `icons/${encodeURIComponent(id)}.svg`) + (color ? `?color=${encodeURIComponent(color)}` : ""));
 const nameOf = id => (rv.uploads.find(u => u.id === id) || {}).name || id;
-const tile = id => `<button type="button" class="tile${choices[rv.sel] === id ? " on" : ""}" data-icon="${esc(id)}"
-    aria-pressed="${choices[rv.sel] === id}"><img class="ic" src="${iconSrc(id)}" width="36" height="36" alt="">
-    <span>${esc(nameOf(id))}</span></button>`;
+
+// One icon per label: where the copy already shows this icon for a different label than placeholder n's (a pick
+// going into the copy, else an icon chosen for another placeholder, whichever was chosen first), or where it was in
+// the deck before the run. Warned at the moment of choosing; the server's list after adding names each reuse once
+// (jobs.reuse_warnings). Labels compare as the server's label_of does: letters only, any case (the report carries
+// each item's label).
+const labelOf = item => item.label || (item.text.toLowerCase().match(/[\p{L}\p{M}]+/gu) || []).join(" ");
+const headOf = text => (text.split("\n").map(s => s.trim()).find(Boolean) || "").replace(/\s+/g, " ").slice(0, 40);
+function usedFor(id, n) {
+  const r = rv.r, mine = labelOf(r.flags[n].item);
+  const inCopy = r.mode === "suggest"
+    ? [...document.querySelectorAll(".pick-box:checked")].map(b => Number(b.value)) : r.picks.map((_, k) => k);
+  const others = [...inCopy.map(k => r.picks[k]).filter(p => p && p.icon.id === id).map(p => p.item),
+    ...Object.keys(choices).map(Number).sort((a, b) => a - b).filter(m => m !== n && choices[m] === id).map(m => r.flags[m].item)];
+  const other = others.find(it => labelOf(it) !== mine);
+  if (other) return {label: headOf(other.text), slide: other.slide};
+  const before = (r.existing || []).find(e => e.icon_id === id);
+  return before && !others.length ? {label: "", slide: before.slide} : null;
+}
+const usedNote = u => u.label ? `Already used for “${u.label}” on slide ${u.slide}` : `Already in the deck on slide ${u.slide}`;
+
+const tile = id => {
+  const u = usedFor(id, rv.sel);
+  return `<button type="button" class="tile${choices[rv.sel] === id ? " on" : ""}" data-icon="${esc(id)}"
+    aria-pressed="${choices[rv.sel] === id}"${u ? ` title="${esc(usedNote(u))}"` : ""}><img class="ic" src="${iconSrc(id)}"
+    width="36" height="36" alt=""><span>${esc(nameOf(id))}</span>${u ? '<span class="used">used</span>' : ""}</button>`;
+};
+
+// the warning under the label when the chosen icon already stands for something else
+function reuseWarning() {
+  const id = choices[rv.sel], u = id && usedFor(id, rv.sel);
+  if (!u) return "";
+  return `<div class="hint" role="alert" style="margin:0 0 8px"><b>${esc(usedNote(u))}.</b> ${u.label
+    ? "Clients may read the two as the same thing, so choose another icon unless that's intended."
+    : "Check it stands for the same thing there."}</div>`;
+}
 
 async function uploadIcon(file) {   // checked like a library upload, kept with this run, chosen for the placeholder
   if (!file) return;
@@ -816,6 +850,7 @@ function drawReview() {
     ${cur.f.item.reads_as ? `<div class="note" style="margin:0 0 6px">Read as: ${esc(cur.f.item.reads_as)}${
       cur.f.item.show && cur.f.item.show.length ? ` (could show ${cur.f.item.show.map(esc).join(", ")})` : ""}</div>` : ""}
     <div class="note" style="margin:0 0 6px">${esc(cur.f.reason)}</div>
+    ${reuseWarning()}
     ${applied[rv.sel] ? `<div class="note" style="margin:0 0 6px">In the latest copy: <b>${esc(nameOf(applied[rv.sel]))}</b></div>` : ""}
     <div class="lbl">Closest icons</div>
     <div class="tiles">${cur.f.options.map(tile).join("") || '<span class="note" style="margin:0">None found: search the library below.</span>'}</div>
@@ -852,9 +887,12 @@ async function apply(r, indices, choices, msg, sync) {
     }
     const skipped = body.skipped.length
       ? `<ul><li>Skipped ${body.skipped.length}: no longer approved in the library (${esc(body.skipped.join(", "))}).</li></ul>` : "";
+    const reused = (body.warnings || []).length   // one icon per label: the designer's choices that reuse an icon
+      ? `<div class="hint" role="alert" style="margin-top:8px"><b>Icons used for more than one label</b><ul style="margin:4px 0 0;padding-left:18px">${
+          body.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : "";
     msg.innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
         to ${esc(body.output_file)}. The copy holds exactly these icons.</span>
-        <a href="${esc(U(body.download))}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>`;
+        <a href="${esc(U(body.download))}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>${reused}`;
     if (HOST) {
       HOST.output = body.output_file;
       if (HOST.applied) HOST.applied(body);

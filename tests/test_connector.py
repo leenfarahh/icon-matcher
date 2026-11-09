@@ -285,6 +285,26 @@ def test_flagged_placeholders_get_the_icons_the_designer_chose_or_uploaded(env, 
         assert sum(n.startswith("Icon - ") for n in shapes) == 2 and "PL logo" not in shapes
 
 
+def test_a_designer_choosing_an_icon_used_for_another_label_is_warned_in_the_panel_and_in_chat(env):
+    deck = env / "deck.pptx"
+    flagged_deck(deck)                                    # "Revenue growth" and "Quarterly outlook", both flagged
+    with client() as c:
+        told, panel = start(c)
+        result = run_deck(c, panel["base"], deck).json()
+        assert [f["item"]["label"] for f in result["flags"]] == ["revenue growth", "quarterly outlook"]
+        added = c.post(panel["base"] + f"jobs/{told['run_id']}/apply",
+                       json={"choices": {"0": "finance-growth-chart", "1": "finance-growth-chart"}}).json()
+        assert added["added"] == 2 and added["warnings"] == [
+            '"Quarterly outlook" (slide 1): finance-growth-chart is already used for "Revenue growth" on slide 1. '
+            "Clients may read the two as the same thing, so choose another icon unless that's intended."]
+        chat = call(c, "choose_icons", run_id=told["run_id"], choices={"0": "finance-growth-chart",
+                                                                        "1": "finance-growth-chart"})[1]
+        assert chat["warnings"] == added["warnings"] and "Pass on each warning" in chat["next"]
+        clean = call(c, "choose_icons", run_id=told["run_id"], choices={"0": "finance-growth-chart",
+                                                                         "1": "people-team"})[1]
+        assert clean["warnings"] == [] and "warning" not in clean["next"]
+
+
 def test_filled_icons_need_the_designers_okay_in_the_connector(env):
     from test_pipeline import add_filled_icons
     add_filled_icons(env / "lib")

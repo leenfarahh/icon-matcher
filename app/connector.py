@@ -62,7 +62,9 @@ page, never through this chat.
 3. The panel tells you when they run the deck or add icons. Call get_icon_run for the details when they ask, or to
    follow a run they do at the link.
 4. If they'd rather choose in the chat: offer each flagged placeholder's options by what the icon draws, then call
-   choose_icons with their picks. Use search_icons when none fit. Use only icon ids these tools return.
+   choose_icons with their picks. Use search_icons when none fit. Use only icon ids these tools return. One icon
+   stands for one label in a deck: don't offer an icon already used for a different label, and if the designer
+   picks one anyway, say so before adding it (choose_icons also returns these as warnings).
 5. Filled icons are used only with the designer's explicit okay. Set allow_filled (start_icon_run, choose_icons) or
    include_filled (search_icons) only after the designer has said in this conversation that filled icons are fine,
    never on your own judgment; if a filled icon would fit, ask first. In the panel, they tick "Allow filled icons".
@@ -319,7 +321,11 @@ async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks
     _update(run_dir, copy_icons=result["added"])
     return {"run_id": run_id, "icons_in_copy": result["added"], "download": _link(run, "jobs", run_id, "download"),
             "not_added": [f"{i}: no longer approved in the library" for i in result["skipped"]],
-            "next": "Tell the designer the new copy is ready: Download deck in the panel gets it, or this link."}
+            "warnings": result["warnings"],
+            "next": "Tell the designer the new copy is ready: Download deck in the panel gets it, or this link." + (
+                " Pass on each warning in their words first: one icon should stand for one label, and these choices "
+                "reuse an icon. Offer other options for those placeholders if they want to change them."
+                if result["warnings"] else "")}
 
 
 def search_icons(query: str, limit: int = 10, include_filled: bool = False) -> dict:

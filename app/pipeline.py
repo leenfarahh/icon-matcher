@@ -9,7 +9,7 @@ from pptx.util import Inches
 from . import colors, concepts, config, deck, placement, placeholders
 from .icon_tools import insert_icon
 from .library import Library
-from .models import Flag, Pick, Report
+from .models import Flag, Pick, Report, label_of
 from .selector import Selector
 
 MODES = {"add", "suggest", "replace", "standardize"}
@@ -92,7 +92,8 @@ def run(deck_path: Path, library: Library, mode: str = "add",
     concept_notes += _offer(flags, picks, library, settings, prs)        # flagged placeholders: a designer chooses
 
     report = Report(mode=mode, settings=settings, picks=picks, flags=flags, gaps=notes + list(concept_notes),
-                    slide_size=(round(prs.slide_width / 914400, 3), round(prs.slide_height / 914400, 3)))
+                    slide_size=(round(prs.slide_width / 914400, 3), round(prs.slide_height / 914400, 3)),
+                    existing=[{"slide": e["slide"], "icon_id": e["icon_id"]} for e in existing if e["icon_id"]])
     if library.indexed_from_filenames:
         report.gaps.append("library has no index: icons matched on file names only")
 
@@ -110,17 +111,27 @@ def _offer(flags: list[Flag], picks: list[Pick], library: Library, settings, prs
     """Flagged PL placeholders are left for a designer to fill: each gets the icons closest in meaning to its
     label (they need not be perfect matches; icons it was already given come first, icons already placed on its
     slide last) and the spot the chosen icon takes: the placeholder's place, in the color an icon there would
-    get, with what's behind it (for previews). Returns notes for the report."""
+    get, with what's behind it (for previews). One icon per label: an icon placed for a different label is never
+    offered, and in deck order each label's first option is its own (a label repeated on another slide is offered
+    the same one first; a different label gets it only after its other options). Returns notes for the report."""
     open_flags = [f for f in flags if f.item.placeholder]
     found, notes = concepts.closest([f.item for f in open_flags], library, settings.styles)
     on_slide = {(p.item.slide, p.icon.id) for p in picks}
+    placed = {}                       # icon -> the label it stands for in the deck
+    for p in picks:
+        placed.setdefault(p.icon.id, label_of(p.item.text))
+    first = {}                        # label -> the icon offered first for it
     stand_ins = []
-    for f, near in zip(open_flags, found):
-        text = f.item.text.lower()
+    for f, near in sorted(zip(open_flags, found), key=lambda fn: fn[0].item.slide):
+        text, said = f.item.text.lower(), label_of(f.item.text)
         usable = [i for i in dict.fromkeys([(f.item.unsure or ("",))[0], *f.options, f.item.icon_pick or "", *near])
                   if (icon := library.get(i)) and icon.style in settings.styles
-                  and not any(a.lower() in text for a in icon.avoid_for)]
-        f.options = sorted(usable, key=lambda i: (f.item.slide, i) in on_slide)[:concepts.OPTIONS]
+                  and not any(a.lower() in text for a in icon.avoid_for) and placed.get(i, said) == said]
+        others = {i for owner, i in first.items() if owner != said}
+        f.options = sorted(usable, key=lambda i: (i != first.get(said), (f.item.slide, i) in on_slide,
+                                                  i in others))[:concepts.OPTIONS]
+        if f.options:
+            first.setdefault(said, f.options[0])
         left, top, w, h = f.item.placeholder["box"]
         size = min(w, h)   # colors.assign reads where an icon sits, not which icon it is
         stand_ins.append((f, Pick(f.item, None, "", [], left=left + (w - size) / 2, top=top + (h - size) / 2,
