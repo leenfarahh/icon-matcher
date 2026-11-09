@@ -42,8 +42,8 @@ Save as **UTF-8** so Arabic survives. Lists are JSON arrays
 | `id` | yes | lowercase-hyphen, unique | The icon's name everywhere (`increase-01`) |
 | `file` | yes | file name in `brand_icons/` | The SVG |
 | `status` | yes | `approved` / `sample` / `deprecated` | Only `approved` is loaded; the others are skipped |
-| `style` | yes | e.g. `outline`, `filled` | One style per deck |
-| `family` | no | `simple` / `detailed` | Visual family within the style: `simple` = bold, minimal glyph (the house set); `detailed` = finer lines, more elements. A set never mixes families; give every new icon one |
+| `style` | yes | `outline` / `filled` | One style per deck. `filled` icons are used only with the designer's explicit okay for the run ("Allow filled icons" in the page, `allow_filled` in the connector); until then they are never picked, offered, searched or accepted (`config.OPT_IN_STYLES`) |
+| `family` | no | `simple` / `detailed` / `filled` | Visual family within the style: `simple` = bold, minimal glyph (the house set); `detailed` = finer lines, more elements; `filled` = solid shapes (give it to every `filled` icon). A set never mixes families; give every new icon one |
 | `category` | yes | one word (`finance`, `people`, `risk`) | Which category file it lands in |
 | `description` | yes | short English phrase | SVG title, alt text, search fallback |
 | `description_ar` | no | short Arabic phrase | Arabic alt text and SVG desc |

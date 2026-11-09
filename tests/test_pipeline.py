@@ -92,8 +92,54 @@ def test_brand_library_is_valid():
     lib = Library(BRAND_LIBRARY)
     assert not lib.indexed_from_filenames and not lib.warnings, lib.warnings  # warnings = concept claimed twice
     assert lib.concept_map["growth"]["id"] == "increase-01"
-    assert {i.style for i in lib.icons.values()} == {config.DEFAULT_STYLE}
-    assert {i.family for i in lib.all.values()} == {"simple", "detailed"}     # every icon in one visual family
+    assert {i.style for i in lib.icons.values()} == {config.DEFAULT_STYLE} | config.OPT_IN_STYLES
+    assert {i.family for i in lib.all.values()} == {"simple", "detailed", "filled"}   # every icon in one family
+    assert all(i.family == "filled" for i in lib.all.values() if i.style == "filled")  # never beside outline icons
+
+
+FILLED_SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#000" '
+              'd="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/></svg>')
+FILLED = [("pin-solid", ["location", "office"]), ("alert-solid", ["alert", "warning"]),
+          ("upload-solid", ["upload", "export"])]
+
+
+def add_filled_icons(root):
+    """Filled icons in a test library: used only with the designer's okay."""
+    recs = json.loads((root / "icons.json").read_text())
+    for icon_id, tags in FILLED:
+        (root / f"{icon_id}.svg").write_text(FILLED_SVG)
+        recs.append({"id": icon_id, "file": f"{icon_id}.svg", "status": "approved", "style": "filled",
+                     "family": "filled", "category": "general", "tags": tags})
+    (root / "icons.json").write_text(json.dumps(recs))
+    return Library(root)
+
+
+def test_filled_icons_are_used_only_with_the_designers_okay(tmp_path):
+    from app import concepts
+    make_library(tmp_path / "lib")
+    lib = add_filled_icons(tmp_path / "lib")
+    make_deck(tmp_path / "deck.pptx", ["Office location", "Safety alert", "Data upload"])
+    r = pipeline.run(tmp_path / "deck.pptx", lib, "suggest")
+    assert r.picks == [] and len(r.flags) == 3                       # only filled icons fit, and nobody okayed them
+    assert r.settings.styles == {"outline"} and not r.settings.allow_filled
+    assert not {"pin-solid", "alert-solid", "upload-solid"} & {i.id for i in concepts._pickable(lib, r.settings.styles)}
+    assert lib.search("location", r.settings.styles) == []
+
+    r = pipeline.run(tmp_path / "deck.pptx", lib, "suggest", allow_filled=True)
+    assert [p.icon.id for p in r.picks] == ["pin-solid", "alert-solid", "upload-solid"]
+    assert r.settings.styles == {"outline", "filled"} and "okayed filled icons" in r.settings.sources["style"]
+
+
+def test_a_deck_whose_own_icons_are_filled_still_gets_outline_icons_without_an_okay(tmp_path):
+    from app import deck
+    make_library(tmp_path / "lib")
+    lib = add_filled_icons(tmp_path / "lib")
+    existing = [{"icon_id": "pin-solid", "size": 0.5, "color_slot": None}] * 2
+    prs = Presentation()
+    settings = deck.detect_settings(prs, lib, existing)
+    assert settings.style == "outline" and "used only when the designer okays them" in settings.sources["style"]
+    settings = deck.detect_settings(prs, lib, existing, allow_filled=True)
+    assert settings.style == "filled" and settings.allow_filled
 
 
 GOOD_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#000" d="M2 2h20v20H2z"/></svg>'

@@ -45,7 +45,7 @@ class Selector:
     # --- rules ---------------------------------------------------------------
     def _allowed(self, icon: IconRecord, item: Item, concept: str | None = None) -> bool:
         concept = concept or item.concept
-        if icon.style != self.settings.style:
+        if icon.style not in self.settings.styles:   # the deck's style; filled only with the designer's okay
             return False
         haystack = {icon.id.lower(), *[t.lower() for t in icon.tags]}
         if any(b in h for b in config.REGIONAL_BLOCKLIST for h in haystack):
@@ -69,7 +69,7 @@ class Selector:
             entry = self.lib.concept_map[key]
             cands = [self.lib.get(i) for i in [entry["id"], *entry.get("alts", [])] if self.lib.get(i)]
             why = f"concept map: {key}"
-        cands += [i for i in self.lib.search(c, self.settings.style, arabic=item.rtl) if i not in cands]
+        cands += [i for i in self.lib.search(c, self.settings.styles, arabic=item.rtl) if i not in cands]
         if not why:
             why = f"tag match: {c}"
         allowed = [i for i in cands if self._allowed(i, item, c)]

@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from . import config, placeholders
-from .models import IconRecord
+from .models import IconRecord, style_set
 
 INDEX_FILE = "icons.json"
 
@@ -78,16 +78,17 @@ class Library:
     def svg_bytes(self, icon: IconRecord) -> bytes:
         return (self.root / icon.file).read_bytes()
 
-    def search(self, concept: str, style: str, arabic: bool = False, limit: int = 10) -> list[IconRecord]:
-        """Score icons by tag overlap with the concept. Concept map is checked by the selector first.
+    def search(self, concept: str, style, arabic: bool = False, limit: int = 10) -> list[IconRecord]:
+        """Score icons by tag overlap with the concept, among icons in `style` (one style or a set of them).
+        Concept map is checked by the selector first.
         Contexts (the subjects an icon suits) only rank icons that already match a tag: on their own they
         say nothing about meaning ("operations" is a context of the approval tick, not what it shows).
         Arabic items match English and Arabic tags, since concepts usually come back in English."""
         forms = spellings(concept)
         words = {w for f in forms for w in re.split(r"[\s\-_/]+", f)}
-        scored = []
+        scored, styles = [], style_set(style)
         for icon in self.icons.values():
-            if icon.style != style:
+            if icon.style not in styles:
                 continue
             tags = set(t.lower() for t in (icon.tags + icon.tags_ar if arabic else icon.tags))
             score = 3 * len(words & tags) + (5 if tags & set(forms) else 0)

@@ -12,7 +12,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 from . import config
-from .models import Item
+from .models import Item, style_set
 
 SYSTEM = """You choose icons for presentation slides. You receive an ICON LIBRARY and a set of SLIDES. Each slide
 has numbered points (a headline and a short gist). For every point, pick the ONE library icon that best
@@ -63,7 +63,8 @@ FAMILY_RULE = ("the library comes in style families, named right after each icon
                "point, then choose all of that slide's icons from it.")
 RETRY = ("Your earlier choices for these slides broke the rules noted under each one. Choose again for every point "
          "of these slides, following all the rules.")
-FAMILY_LOOKS = {"simple": "bold, minimal glyphs", "detailed": "finer line drawings with more elements"}
+FAMILY_LOOKS = {"simple": "bold, minimal glyphs", "detailed": "finer line drawings with more elements",
+                "filled": "solid shapes, no outlines"}
 
 CLOSEST = """A different task from the one above. The points in SLIDES got no icon, and a designer will choose one for
 each by hand from a short list. For every point, list up to {n} library icons closest to what it means, best first.
@@ -108,9 +109,11 @@ def _key(i: Item) -> str:
     return f"{i.slide}:{i.shape_id}:{i.paragraph}"
 
 
-def _pickable(library, style: str) -> list:
-    """The icons Claude may pick: approved, in the deck's style, clear of the regional block list."""
-    return [i for i in library.icons.values() if i.style == style and not any(
+def _pickable(library, style) -> list:
+    """The icons Claude may pick: approved, in the run's style(s) (one style or a set: filled joins only with the
+    designer's okay, DeckSettings.styles), clear of the regional block list."""
+    styles = style_set(style)
+    return [i for i in library.icons.values() if i.style in styles and not any(
         b in h.lower() for b in config.REGIONAL_BLOCKLIST for h in [i.id, *i.tags])]
 
 

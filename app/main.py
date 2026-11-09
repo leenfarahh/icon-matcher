@@ -85,7 +85,8 @@ def icon_svg(icon_id: str, color: str = ""):
 
 
 @app.post("/jobs")
-async def create_job(deck: UploadFile = File(...), mode: str = Form("replace"), slides: str = Form("")):
+async def create_job(deck: UploadFile = File(...), mode: str = Form("replace"), slides: str = Form(""),
+                     allow_filled: bool = Form(False)):   # the page's "Allow filled icons": off unless ticked
     if not deck.filename.lower().endswith(".pptx"):
         raise HTTPException(400, "upload a .pptx")
     job = uuid.uuid4().hex[:12]
@@ -96,7 +97,7 @@ async def create_job(deck: UploadFile = File(...), mode: str = Form("replace"), 
         shutil.copyfileobj(deck.file, f)
     slide_list = [int(s) for s in slides.split(",") if s.strip()] or None
     try:
-        result = jobs.run(job_dir, deck.filename, library, mode, slide_list)
+        result = jobs.run(job_dir, deck.filename, library, mode, slide_list, allow_filled)
     except (ValueError, NotImplementedError) as e:
         raise HTTPException(400, str(e))
     return {"job": job, **result}

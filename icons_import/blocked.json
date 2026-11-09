@@ -1,0 +1,2148 @@
+[
+  {
+    "id": "k-p02-013",
+    "file": "svg_k/k-p02-013.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Handshake inside circular dotted arrow",
+    "description_ar": "مصافحة داخل سهم دائري منقط",
+    "tags": [
+      "clasp",
+      "partnership",
+      "ongoing relationship",
+      "agreement",
+      "collaboration",
+      "cycle"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "شراكة",
+      "علاقة مستمرة",
+      "اتفاق",
+      "تعاون",
+      "دورة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnership",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": true,
+    "source": "1000 icon 4.ai, sheet page 2",
+    "license": ""
+  },
+  {
+    "id": "k-p03-053",
+    "file": "svg_k/k-p03-053.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Thick arrow pointing down-left",
+    "description_ar": "سهم عريض يشير إلى الأسفل واليسار",
+    "tags": [
+      "arrow",
+      "down",
+      "direction",
+      "pointing",
+      "decline",
+      "next"
+    ],
+    "tags_ar": [
+      "سهم",
+      "للأسفل",
+      "اتجاه",
+      "يشير",
+      "تراجع",
+      "التالي"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "process",
+      "data"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": true,
+    "source": "1000 icon 4.ai, sheet page 3",
+    "license": ""
+  },
+  {
+    "id": "k-p04-023",
+    "file": "svg_k/k-p04-023.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "documents",
+    "description": "Checklist with pointing finger",
+    "description_ar": "قائمة مراجعة مع إصبع يشير",
+    "tags": [
+      "checklist",
+      "selection",
+      "tick items",
+      "survey",
+      "choose options",
+      "pointing"
+    ],
+    "tags_ar": [
+      "قائمة مراجعة",
+      "اختيار",
+      "وضع علامات",
+      "استبيان",
+      "اختيار الخيارات",
+      "إشارة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "operations",
+      "marketing"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 4",
+    "license": ""
+  },
+  {
+    "id": "k-p04-036",
+    "file": "svg_k/k-p04-036.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "documents",
+    "description": "Newspaper layout with pointing finger",
+    "description_ar": "تخطيط جريدة مع إصبع يشير",
+    "tags": [
+      "newspaper",
+      "article selection",
+      "press",
+      "pointing",
+      "reading",
+      "news"
+    ],
+    "tags_ar": [
+      "جريدة",
+      "اختيار مقال",
+      "صحافة",
+      "إشارة",
+      "قراءة",
+      "أخبار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "media",
+      "communication"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 4",
+    "license": ""
+  },
+  {
+    "id": "k-p04-056",
+    "file": "svg_k/k-p04-056.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "communication",
+    "description": "Browser window with star ratings and tapping finger",
+    "description_ar": "نافذة متصفح بتقييم نجوم وإصبع ينقر",
+    "tags": [
+      "star rating",
+      "reviews",
+      "feedback",
+      "customer rating",
+      "browser",
+      "tapping"
+    ],
+    "tags_ar": [
+      "تقييم بالنجوم",
+      "مراجعات",
+      "ملاحظات",
+      "تقييم العملاء",
+      "متصفح",
+      "نقر"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "retail"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 4",
+    "license": ""
+  },
+  {
+    "id": "k-p04-057",
+    "file": "svg_k/k-p04-057.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "communication",
+    "description": "Browser page with stars and thumbs-up",
+    "description_ar": "صفحة متصفح مع نجوم وإبهام مرفوع",
+    "tags": [
+      "thumbs-up",
+      "star rating",
+      "approval",
+      "reviews",
+      "positive feedback",
+      "customer satisfaction"
+    ],
+    "tags_ar": [
+      "إبهام مرفوع",
+      "تقييم بالنجوم",
+      "موافقة",
+      "مراجعات",
+      "ملاحظات إيجابية",
+      "رضا العملاء"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "retail"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 4",
+    "license": ""
+  },
+  {
+    "id": "k-p06-083",
+    "file": "svg_k/k-p06-083.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "nature",
+    "description": "Crescent moon with stars",
+    "description_ar": "هلال مع نجوم",
+    "tags": [
+      "night",
+      "moon",
+      "sleep",
+      "dark mode",
+      "evening",
+      "stars"
+    ],
+    "tags_ar": [
+      "ليل",
+      "قمر",
+      "نوم",
+      "وضع ليلي",
+      "مساء",
+      "نجوم"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "weather"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 6",
+    "license": ""
+  },
+  {
+    "id": "k-p10-010",
+    "file": "svg_k/k-p10-010.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "operations",
+    "description": "Spray gun on rail",
+    "description_ar": "مسدس رش على مسار",
+    "tags": [
+      "spray gun",
+      "painting",
+      "coating",
+      "surface finishing",
+      "industrial paint",
+      "automation"
+    ],
+    "tags_ar": [
+      "مسدس رش",
+      "طلاء",
+      "تغليف سطحي",
+      "تشطيب الأسطح",
+      "دهان صناعي",
+      "أتمتة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "manufacturing",
+      "construction"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 10",
+    "license": ""
+  },
+  {
+    "id": "k-p10-056",
+    "file": "svg_k/k-p10-056.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "nature",
+    "description": "Spray bottle with leaf",
+    "description_ar": "بخاخ مع ورقة نبات",
+    "tags": [
+      "spray bottle",
+      "eco cleaner",
+      "sanitizer",
+      "green products",
+      "cleaning",
+      "organic"
+    ],
+    "tags_ar": [
+      "بخاخ",
+      "منظف صديق للبيئة",
+      "معقم",
+      "منتجات خضراء",
+      "تنظيف",
+      "عضوي"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "sustainability",
+      "facilities"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 10",
+    "license": ""
+  },
+  {
+    "id": "k-p11-040",
+    "file": "svg_k/k-p11-040.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Two people greeting with a clasp",
+    "description_ar": "شخصان يتصافحان",
+    "tags": [
+      "agreement",
+      "partnership",
+      "deal",
+      "collaboration",
+      "welcome",
+      "trust"
+    ],
+    "tags_ar": [
+      "اتفاق",
+      "شراكة",
+      "صفقة",
+      "تعاون",
+      "ترحيب",
+      "ثقة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "business",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 11",
+    "license": ""
+  },
+  {
+    "id": "k-p12-002",
+    "file": "svg_k/k-p12-002.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Handshake between two cuffed sleeves",
+    "description_ar": "مصافحة بين كمّين",
+    "tags": [
+      "clasped grip",
+      "agreement",
+      "partnership",
+      "deal",
+      "trust",
+      "welcome"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "اتفاق",
+      "شراكة",
+      "صفقة",
+      "ثقة",
+      "ترحيب"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-003",
+    "file": "svg_k/k-p12-003.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Two gripping fists joined in solidarity",
+    "description_ar": "قبضتان متشابكتان للتضامن",
+    "tags": [
+      "joined fists",
+      "solidarity",
+      "unity",
+      "strength",
+      "teamwork",
+      "support"
+    ],
+    "tags_ar": [
+      "قبضتان متشابكتان",
+      "تضامن",
+      "وحدة",
+      "قوة",
+      "عمل جماعي",
+      "دعم"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "teamwork",
+      "community"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-008",
+    "file": "svg_k/k-p12-008.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Raised palm with fingers together at a cuff",
+    "description_ar": "كف مرفوعة بأصابع مضمومة",
+    "tags": [
+      "raised palm",
+      "stop",
+      "halt",
+      "pause",
+      "attention",
+      "boundary"
+    ],
+    "tags_ar": [
+      "كف مرفوعة",
+      "توقف",
+      "إيقاف",
+      "مهلة",
+      "انتباه",
+      "حد"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "safety",
+      "compliance"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-009",
+    "file": "svg_k/k-p12-009.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Handshake between two cuffed sleeves, filled",
+    "description_ar": "مصافحة بين كمّين بتصميم ممتلئ",
+    "tags": [
+      "clasped grip",
+      "partnership",
+      "agreement",
+      "collaboration",
+      "deal",
+      "trust"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "شراكة",
+      "اتفاق",
+      "تعاون",
+      "صفقة",
+      "ثقة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-010",
+    "file": "svg_k/k-p12-010.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Gear and person above a handshake",
+    "description_ar": "ترس وشخص فوق مصافحة",
+    "tags": [
+      "clasped grip",
+      "gear",
+      "partnership",
+      "team process",
+      "collaboration",
+      "agreement",
+      "management"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "ترس",
+      "شراكة",
+      "عملية الفريق",
+      "تعاون",
+      "اتفاق",
+      "إدارة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "operations"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-012",
+    "file": "svg_k/k-p12-012.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Puzzle pieces with a finger placing one",
+    "description_ar": "قطع أحجية مع إصبع يضع قطعة",
+    "tags": [
+      "puzzle",
+      "pointing finger",
+      "fit",
+      "solution",
+      "integration",
+      "problem solving"
+    ],
+    "tags_ar": [
+      "أحجية",
+      "إصبع مشير",
+      "تناسب",
+      "حل",
+      "تكامل",
+      "حل المشكلات"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "strategy",
+      "consulting"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-017",
+    "file": "svg_k/k-p12-017.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing up",
+    "description_ar": "إصبع سبابة يشير لأعلى",
+    "tags": [
+      "pointing finger",
+      "point up",
+      "attention",
+      "idea",
+      "choose",
+      "note"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لأعلى",
+      "انتباه",
+      "فكرة",
+      "اختيار",
+      "ملاحظة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "highlights",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-022",
+    "file": "svg_k/k-p12-022.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Raised index finger at a cuff",
+    "description_ar": "إصبع سبابة مرفوع",
+    "tags": [
+      "raised finger",
+      "one",
+      "attention",
+      "warning",
+      "first",
+      "reminder"
+    ],
+    "tags_ar": [
+      "إصبع مرفوع",
+      "واحد",
+      "انتباه",
+      "تحذير",
+      "الأول",
+      "تذكير"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "instructions",
+      "highlights"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-027",
+    "file": "svg_k/k-p12-027.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing up, bold",
+    "description_ar": "إصبع سبابة يشير لأعلى بخط عريض",
+    "tags": [
+      "pointing finger",
+      "point up",
+      "attention",
+      "idea",
+      "choose",
+      "note"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لأعلى",
+      "انتباه",
+      "فكرة",
+      "اختيار",
+      "ملاحظة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "highlights",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-028",
+    "file": "svg_k/k-p12-028.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing up with cuff",
+    "description_ar": "إصبع سبابة يشير لأعلى مع كم",
+    "tags": [
+      "pointing finger",
+      "point up",
+      "attention",
+      "focus",
+      "click",
+      "note"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لأعلى",
+      "انتباه",
+      "تركيز",
+      "نقرة",
+      "ملاحظة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "highlights",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-029",
+    "file": "svg_k/k-p12-029.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Handshake with angular sleeves",
+    "description_ar": "مصافحة بكمّين زاويين",
+    "tags": [
+      "clasped grip",
+      "agreement",
+      "partnership",
+      "deal",
+      "trust",
+      "cooperation"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "اتفاق",
+      "شراكة",
+      "صفقة",
+      "ثقة",
+      "تعاون"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-030",
+    "file": "svg_k/k-p12-030.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Raised open palm",
+    "description_ar": "كف مفتوحة مرفوعة",
+    "tags": [
+      "raised palm",
+      "stop",
+      "high five",
+      "volunteer",
+      "halt",
+      "greeting"
+    ],
+    "tags_ar": [
+      "كف مرفوعة",
+      "توقف",
+      "تحية",
+      "تطوع",
+      "إيقاف",
+      "ترحيب"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "safety",
+      "engagement"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-032",
+    "file": "svg_k/k-p12-032.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "technology",
+    "description": "Finger tapping a screen with burst lines",
+    "description_ar": "إصبع يلمس شاشة مع خطوط متوهجة",
+    "tags": [
+      "touch screen",
+      "tap",
+      "click",
+      "interaction",
+      "interface",
+      "engagement"
+    ],
+    "tags_ar": [
+      "شاشة لمس",
+      "نقر",
+      "ضغط",
+      "تفاعل",
+      "واجهة",
+      "مشاركة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "digital",
+      "ux"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-035",
+    "file": "svg_k/k-p12-035.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing right",
+    "description_ar": "إصبع سبابة يشير لليمين",
+    "tags": [
+      "pointing finger",
+      "point right",
+      "direction",
+      "next",
+      "this way",
+      "choose"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لليمين",
+      "اتجاه",
+      "التالي",
+      "هذا الاتجاه",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "navigation",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": true,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-036",
+    "file": "svg_k/k-p12-036.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Fist with index finger pointing left",
+    "description_ar": "إصبع سبابة يشير لليسار",
+    "tags": [
+      "pointing finger",
+      "point left",
+      "direction",
+      "previous",
+      "look here",
+      "choose"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لليسار",
+      "اتجاه",
+      "السابق",
+      "انظر هنا",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "navigation",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": true,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-046",
+    "file": "svg_k/k-p12-046.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing up with cuff, thin",
+    "description_ar": "إصبع سبابة يشير لأعلى بخط رفيع",
+    "tags": [
+      "pointing finger",
+      "point up",
+      "attention",
+      "idea",
+      "note",
+      "choose"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لأعلى",
+      "انتباه",
+      "فكرة",
+      "ملاحظة",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "highlights",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-047",
+    "file": "svg_k/k-p12-047.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Thumbs-up",
+    "description_ar": "إبهام مرفوع",
+    "tags": [
+      "thumbs-up",
+      "approval",
+      "like",
+      "positive feedback",
+      "success",
+      "agree"
+    ],
+    "tags_ar": [
+      "إبهام مرفوع",
+      "موافقة",
+      "إعجاب",
+      "تقييم إيجابي",
+      "نجاح",
+      "اتفاق"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "feedback",
+      "approval"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-048",
+    "file": "svg_k/k-p12-048.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Index finger pointing up, outlined",
+    "description_ar": "إصبع سبابة يشير لأعلى",
+    "tags": [
+      "pointing finger",
+      "point up",
+      "attention",
+      "idea",
+      "note",
+      "choose"
+    ],
+    "tags_ar": [
+      "إصبع مشير",
+      "إشارة لأعلى",
+      "انتباه",
+      "فكرة",
+      "ملاحظة",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "highlights",
+      "instructions"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-053",
+    "file": "svg_k/k-p12-053.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "technology",
+    "description": "Finger pressing a button inside concentric circles",
+    "description_ar": "إصبع يضغط زرا داخل دوائر متداخلة",
+    "tags": [
+      "button press",
+      "tap",
+      "click",
+      "touch",
+      "call to action",
+      "engagement"
+    ],
+    "tags_ar": [
+      "ضغط زر",
+      "نقر",
+      "ضغطة",
+      "لمس",
+      "دعوة لاتخاذ إجراء",
+      "تفاعل"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "digital",
+      "ux"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-057",
+    "file": "svg_k/k-p12-057.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Small handshake between two cuffed sleeves",
+    "description_ar": "مصافحة صغيرة بين كمّين",
+    "tags": [
+      "clasped grip",
+      "agreement",
+      "partnership",
+      "deal",
+      "trust",
+      "cooperation"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "اتفاق",
+      "شراكة",
+      "صفقة",
+      "ثقة",
+      "تعاون"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "sales"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p12-059",
+    "file": "svg_k/k-p12-059.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Handshake inside a dotted circle",
+    "description_ar": "مصافحة داخل دائرة منقطة",
+    "tags": [
+      "clasped grip",
+      "agreement",
+      "partnership",
+      "deal",
+      "commitment",
+      "trust"
+    ],
+    "tags_ar": [
+      "مصافحة",
+      "اتفاق",
+      "شراكة",
+      "صفقة",
+      "التزام",
+      "ثقة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "partnerships",
+      "contracts"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 12",
+    "license": ""
+  },
+  {
+    "id": "k-p13-003",
+    "file": "svg_k/k-p13-003.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "places",
+    "description": "Mosque with domes and minarets",
+    "description_ar": "مسجد بقباب ومآذن",
+    "tags": [
+      "mosque",
+      "religion",
+      "prayer",
+      "islamic architecture",
+      "worship",
+      "heritage"
+    ],
+    "tags_ar": [
+      "مسجد",
+      "دين",
+      "صلاة",
+      "عمارة إسلامية",
+      "عبادة",
+      "تراث"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "culture",
+      "heritage"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 13",
+    "license": ""
+  },
+  {
+    "id": "k-p14-019",
+    "file": "svg_k/k-p14-019.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Thumbs-up in a jagged seal",
+    "description_ar": "إبهام مرفوع داخل ختم مسنن",
+    "tags": [
+      "thumbs-up",
+      "approval",
+      "recommended",
+      "satisfaction",
+      "positive feedback",
+      "quality"
+    ],
+    "tags_ar": [
+      "إبهام مرفوع",
+      "موافقة",
+      "موصى به",
+      "رضا",
+      "تقييم إيجابي",
+      "جودة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "feedback",
+      "quality"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 14",
+    "license": ""
+  },
+  {
+    "id": "k-p17-015",
+    "file": "svg_k/k-p17-015.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "places",
+    "description": "House with thumbs-up",
+    "description_ar": "منزل مع إبهام مرفوع",
+    "tags": [
+      "house approval",
+      "thumbs up",
+      "recommended home",
+      "satisfaction",
+      "positive review",
+      "endorsement"
+    ],
+    "tags_ar": [
+      "موافقة على المنزل",
+      "إبهام مرفوع",
+      "منزل موصى به",
+      "رضا",
+      "تقييم إيجابي",
+      "تأييد"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "real estate",
+      "marketing"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 17",
+    "license": ""
+  },
+  {
+    "id": "k-p17-032",
+    "file": "svg_k/k-p17-032.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "places",
+    "description": "House with pointing finger",
+    "description_ar": "منزل مع إصبع يشير",
+    "tags": [
+      "house selection",
+      "pointing finger",
+      "select property",
+      "click",
+      "choose",
+      "touch"
+    ],
+    "tags_ar": [
+      "اختيار المنزل",
+      "إصبع يشير",
+      "اختيار عقار",
+      "نقر",
+      "اختيار",
+      "لمس"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "real estate",
+      "technology"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 17",
+    "license": ""
+  },
+  {
+    "id": "k-p17-038",
+    "file": "svg_k/k-p17-038.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Curved arrow pointing down-left",
+    "description_ar": "سهم منحن لأسفل اليسار",
+    "tags": [
+      "curved arrow",
+      "direction",
+      "return",
+      "pointing",
+      "flow",
+      "turnaround"
+    ],
+    "tags_ar": [
+      "سهم منحن",
+      "اتجاه",
+      "عودة",
+      "إشارة",
+      "تدفق",
+      "انعطاف"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "business"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": true,
+    "source": "1000 icon 4.ai, sheet page 17",
+    "license": ""
+  },
+  {
+    "id": "k-p19-016",
+    "file": "svg_k/k-p19-016.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "governance",
+    "description": "Raised fist holding scales of justice",
+    "description_ar": "قبضة مرفوعة مع ميزان العدالة",
+    "tags": [
+      "raised fist",
+      "justice",
+      "scales",
+      "rights",
+      "advocacy",
+      "activism"
+    ],
+    "tags_ar": [
+      "قبضة مرفوعة",
+      "عدالة",
+      "ميزان",
+      "حقوق",
+      "مناصرة",
+      "نشاط حقوقي"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "legal",
+      "community"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "1000 icon 4.ai, sheet page 19",
+    "license": ""
+  },
+  {
+    "id": "o-p02-022",
+    "file": "svg_o/o-p02-022.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "documents",
+    "description": "Checklist being ticked by finger",
+    "description_ar": "قائمة تحقق بلمسة إصبع",
+    "tags": [
+      "checklist",
+      "tasks",
+      "selection",
+      "to-do",
+      "touch",
+      "options"
+    ],
+    "tags_ar": [
+      "قائمة تحقق",
+      "مهام",
+      "اختيار",
+      "قائمة مهام",
+      "لمس",
+      "خيارات"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "operations",
+      "planning"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 2",
+    "license": ""
+  },
+  {
+    "id": "o-p02-035",
+    "file": "svg_o/o-p02-035.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "media",
+    "description": "Newspaper held with finger pointing",
+    "description_ar": "صحيفة مع إشارة بإصبع",
+    "tags": [
+      "newspaper",
+      "press",
+      "article",
+      "reading",
+      "news",
+      "selection"
+    ],
+    "tags_ar": [
+      "صحيفة",
+      "صحافة",
+      "مقال",
+      "قراءة",
+      "أخبار",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "media",
+      "communications"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 2",
+    "license": ""
+  },
+  {
+    "id": "o-p03-006",
+    "file": "svg_o/o-p03-006.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "marketing",
+    "description": "Website rating stars with finger tap",
+    "description_ar": "تقييم نجوم لموقع مع لمسة إصبع",
+    "tags": [
+      "website",
+      "star rating",
+      "review",
+      "feedback",
+      "customer rating",
+      "touch"
+    ],
+    "tags_ar": [
+      "موقع",
+      "تقييم بالنجوم",
+      "مراجعة",
+      "ملاحظات",
+      "تقييم العملاء",
+      "لمس"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "customer experience"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 3",
+    "license": ""
+  },
+  {
+    "id": "o-p03-008",
+    "file": "svg_o/o-p03-008.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "marketing",
+    "description": "Website rating stars with finger tap",
+    "description_ar": "تقييم نجوم لموقع مع لمسة إصبع",
+    "tags": [
+      "website",
+      "star rating",
+      "review",
+      "feedback",
+      "customer rating",
+      "touch"
+    ],
+    "tags_ar": [
+      "موقع",
+      "تقييم بالنجوم",
+      "مراجعة",
+      "ملاحظات",
+      "تقييم العملاء",
+      "لمس"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "customer experience"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 3",
+    "license": ""
+  },
+  {
+    "id": "o-p03-009",
+    "file": "svg_o/o-p03-009.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "marketing",
+    "description": "Page with stars and thumbs up",
+    "description_ar": "صفحة مع نجوم وإعجاب",
+    "tags": [
+      "page",
+      "stars",
+      "thumbs up",
+      "approval",
+      "reviews",
+      "customer satisfaction"
+    ],
+    "tags_ar": [
+      "صفحة",
+      "نجوم",
+      "إعجاب",
+      "موافقة",
+      "مراجعات",
+      "رضا العملاء"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "customer experience"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 3",
+    "license": ""
+  },
+  {
+    "id": "o-p05-071",
+    "file": "svg_o/o-p05-071.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Finger placing a puzzle piece",
+    "description_ar": "إصبع يضع قطعة أحجية",
+    "tags": [
+      "puzzle piece",
+      "placing",
+      "finger",
+      "assembly",
+      "solution",
+      "integration"
+    ],
+    "tags_ar": [
+      "قطعة أحجية",
+      "وضع",
+      "إصبع",
+      "تجميع",
+      "حل",
+      "تكامل"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "strategy",
+      "operations"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 5",
+    "license": ""
+  },
+  {
+    "id": "o-p05-074",
+    "file": "svg_o/o-p05-074.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Finger tapping a check box",
+    "description_ar": "إصبع يلمس مربع اختيار",
+    "tags": [
+      "finger",
+      "checkbox",
+      "selection",
+      "approval",
+      "touch screen",
+      "confirm"
+    ],
+    "tags_ar": [
+      "إصبع",
+      "مربع اختيار",
+      "تحديد",
+      "موافقة",
+      "شاشة لمس",
+      "تأكيد"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "technology",
+      "operations"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 5",
+    "license": ""
+  },
+  {
+    "id": "o-p06-001",
+    "file": "svg_o/o-p06-001.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Raised fist with flag",
+    "description_ar": "قبضة مرفوعة مع علم",
+    "tags": [
+      "fist",
+      "flag",
+      "determination",
+      "commitment",
+      "milestone",
+      "campaign"
+    ],
+    "tags_ar": [
+      "قبضة",
+      "علم",
+      "عزيمة",
+      "التزام",
+      "معلم رئيسي",
+      "حملة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "strategy",
+      "leadership"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 6",
+    "license": ""
+  },
+  {
+    "id": "o-p06-006",
+    "file": "svg_o/o-p06-006.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Person reaching toward stars",
+    "description_ar": "شخص يمد ذراعه نحو النجوم",
+    "tags": [
+      "ambition",
+      "reaching",
+      "stars",
+      "vision",
+      "aspiration",
+      "stepping up"
+    ],
+    "tags_ar": [
+      "طموح",
+      "تطلع",
+      "نجوم",
+      "رؤية",
+      "سعي",
+      "ارتقاء"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "leadership",
+      "strategy"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 6",
+    "license": ""
+  },
+  {
+    "id": "o-p07-001",
+    "file": "svg_o/o-p07-001.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Clasped hands in agreement",
+    "description_ar": "مصافحة اتفاق",
+    "tags": [
+      "partnership",
+      "agreement",
+      "deal",
+      "trust",
+      "collaboration",
+      "negotiation"
+    ],
+    "tags_ar": [
+      "شراكة",
+      "اتفاق",
+      "صفقة",
+      "ثقة",
+      "تعاون",
+      "تفاوض"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "business",
+      "partnerships"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-003",
+    "file": "svg_o/o-p07-003.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Clasped arms in solidarity",
+    "description_ar": "أذرع متشابكة تضامنا",
+    "tags": [
+      "solidarity",
+      "unity",
+      "strength",
+      "teamwork",
+      "support",
+      "alliance"
+    ],
+    "tags_ar": [
+      "تضامن",
+      "وحدة",
+      "قوة",
+      "عمل جماعي",
+      "دعم",
+      "تحالف"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "team",
+      "leadership"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-009",
+    "file": "svg_o/o-p07-009.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Business agreement clasp",
+    "description_ar": "مصافحة عمل",
+    "tags": [
+      "partnership",
+      "agreement",
+      "deal",
+      "business",
+      "trust",
+      "alliance"
+    ],
+    "tags_ar": [
+      "شراكة",
+      "اتفاق",
+      "صفقة",
+      "أعمال",
+      "ثقة",
+      "تحالف"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "business",
+      "partnerships"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-011",
+    "file": "svg_o/o-p07-011.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Thumbs up badge",
+    "description_ar": "شارة إعجاب",
+    "tags": [
+      "thumbs up",
+      "approval",
+      "like",
+      "satisfaction",
+      "endorsement",
+      "quality badge"
+    ],
+    "tags_ar": [
+      "إعجاب",
+      "موافقة",
+      "استحسان",
+      "رضا",
+      "تأييد",
+      "شارة جودة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "marketing",
+      "customer experience"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-014",
+    "file": "svg_o/o-p07-014.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "people",
+    "description": "Team with gear and clasp",
+    "description_ar": "فريق مع ترس ومصافحة",
+    "tags": [
+      "team",
+      "gear",
+      "partnership",
+      "collaboration",
+      "operations",
+      "agreement"
+    ],
+    "tags_ar": [
+      "فريق",
+      "ترس",
+      "شراكة",
+      "تعاون",
+      "عمليات",
+      "اتفاق"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "team",
+      "operations"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-017",
+    "file": "svg_o/o-p07-017.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Clasped hands in dotted circle",
+    "description_ar": "مصافحة داخل دائرة منقطة",
+    "tags": [
+      "partnership",
+      "agreement",
+      "dotted circle",
+      "trust",
+      "unity",
+      "cooperation"
+    ],
+    "tags_ar": [
+      "شراكة",
+      "اتفاق",
+      "دائرة منقطة",
+      "ثقة",
+      "وحدة",
+      "تعاون"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "business",
+      "partnerships"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p07-020",
+    "file": "svg_o/o-p07-020.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "communication",
+    "description": "Megaphone with clasped fists",
+    "description_ar": "مكبر صوت مع قبضتين متشابكتين",
+    "tags": [
+      "megaphone",
+      "solidarity",
+      "campaign",
+      "advocacy",
+      "outreach",
+      "announcement"
+    ],
+    "tags_ar": [
+      "مكبر صوت",
+      "تضامن",
+      "حملة",
+      "مناصرة",
+      "توعية",
+      "إعلان"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "communications",
+      "marketing"
+    ],
+    "metaphor_strength": "weak",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 7",
+    "license": ""
+  },
+  {
+    "id": "o-p09-030",
+    "file": "svg_o/o-p09-030.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Finger tapping checkbox",
+    "description_ar": "إصبع ينقر على مربع اختيار",
+    "tags": [
+      "select",
+      "tap",
+      "checkbox",
+      "survey",
+      "vote",
+      "choose"
+    ],
+    "tags_ar": [
+      "تحديد",
+      "نقر",
+      "مربع اختيار",
+      "استبيان",
+      "تصويت",
+      "اختيار"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "technology",
+      "research"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 9",
+    "license": ""
+  },
+  {
+    "id": "o-p11-013",
+    "file": "svg_o/o-p11-013.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "finance",
+    "description": "Mosque with balance of coin stacks",
+    "description_ar": "مسجد مع ميزان عملات",
+    "tags": [
+      "islamic finance",
+      "zakat",
+      "charity",
+      "mosque",
+      "religious endowment",
+      "donation"
+    ],
+    "tags_ar": [
+      "تمويل إسلامي",
+      "زكاة",
+      "عمل خيري",
+      "مسجد",
+      "وقف",
+      "تبرع"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "finance",
+      "community"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 11",
+    "license": ""
+  },
+  {
+    "id": "o-p14-009",
+    "file": "svg_o/o-p14-009.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "governance",
+    "description": "Raised fist with scales and gear",
+    "description_ar": "قبضة مرفوعة مع ميزان وترس",
+    "tags": [
+      "labor rights",
+      "justice",
+      "scales",
+      "workers",
+      "employment law",
+      "fair process"
+    ],
+    "tags_ar": [
+      "حقوق العمال",
+      "عدالة",
+      "ميزان",
+      "عمال",
+      "قانون العمل",
+      "إجراءات عادلة"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "legal",
+      "hr"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 14",
+    "license": ""
+  },
+  {
+    "id": "o-p15-008",
+    "file": "svg_o/o-p15-008.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "business",
+    "description": "Finger pressing puzzle piece into place",
+    "description_ar": "إصبع يضع قطعة أحجية",
+    "tags": [
+      "puzzle",
+      "solve",
+      "fit piece",
+      "solution",
+      "assembly",
+      "problem solving"
+    ],
+    "tags_ar": [
+      "أحجية",
+      "حل",
+      "تركيب قطعة",
+      "حل مشكلة",
+      "تجميع",
+      "معالجة المشكلات"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "strategy",
+      "teamwork"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 15",
+    "license": ""
+  },
+  {
+    "id": "o-p15-021",
+    "file": "svg_o/o-p15-021.svg",
+    "status": "deprecated",
+    "style": "outline",
+    "family": "detailed",
+    "category": "general",
+    "description": "Finger tapping checkbox",
+    "description_ar": "إصبع ينقر على مربع اختيار",
+    "tags": [
+      "select",
+      "tap",
+      "checkbox",
+      "vote",
+      "survey",
+      "confirm"
+    ],
+    "tags_ar": [
+      "تحديد",
+      "نقر",
+      "مربع اختيار",
+      "تصويت",
+      "استبيان",
+      "تأكيد"
+    ],
+    "preferred_for": [],
+    "avoid_for": [],
+    "contexts": [
+      "technology",
+      "research"
+    ],
+    "metaphor_strength": "strong",
+    "pairs_with": [],
+    "rtl_flip": false,
+    "source": "icons outline [Recovered] 6.ai, sheet page 15",
+    "license": ""
+  }
+]

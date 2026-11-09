@@ -20,6 +20,8 @@
   main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
   .row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
+  label.tick { display: flex; align-items: center; gap: 6px; padding-bottom: 8px; }
+  label.tick input { margin: 0; }
   label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
   input, select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
   input[type=file] { padding: 5px; }
@@ -167,6 +169,8 @@
           </select>
         </label>
         <label>Slides (optional)<input name="slides" placeholder="e.g. 2,3,5" size="12"></label>
+        <label class="tick" title="Filled icons are used only with the designer's okay. Leave this off unless they said filled icons are fine for this deck.">
+          <input type="checkbox" name="allow_filled"> Allow filled icons</label>
         <button class="primary" type="submit">Run</button>
       </div>
       <p class="note" id="attached-note" hidden></p>
@@ -320,7 +324,9 @@ function renderLibrary() {
       <div class="ar">${esc(i.description_ar)}</div>
       <div style="margin:8px 0">
         <span class="badge">${esc(i.category)}</span>
-        <span class="badge">${esc(i.style)}</span>
+        ${(lib.opt_in_styles || []).includes(i.style)
+          ? `<span class="badge weak" title="Used only when the designer okays ${esc(i.style)} icons for the run">${esc(i.style)}: needs okay</span>`
+          : `<span class="badge">${esc(i.style)}</span>`}
         ${i.family ? `<span class="badge">${esc(i.family)}</span>` : ""}
         ${i.metaphor_strength === "weak" ? '<span class="badge weak">weak metaphor</span>' : ""}
         ${i.rtl_flip ? '<span class="badge rtl">mirrors in Arabic</span>' : ""}
@@ -742,7 +748,9 @@ async function uploadIcon(file) {   // checked like a library upload, kept with 
 
 function drawResults() {
   const q = rv.q.trim().toLowerCase();
-  const hits = q ? lib.icons.filter(i => i.status === "approved" && i.style === rv.r.settings.style
+  const st = rv.r.settings;   // the deck's style; filled (opt-in) styles only if the designer okayed them for the run
+  const hits = q ? lib.icons.filter(i => i.status === "approved"
+    && (i.style === st.style || (st.allow_filled && (lib.opt_in_styles || []).includes(i.style)))
     && [i.id, i.description, ...i.tags, ...i.preferred_for].some(v => String(v).toLowerCase().includes(q))).slice(0, 24) : [];
   $("#lib-results").innerHTML = hits.map(i => tile(i.id)).join("")
     || (q ? '<span class="note" style="margin:0">No icons match.</span>' : "");
@@ -877,6 +885,7 @@ async function restore() {   // hosted: the mode, slides and deck Claude set for
     const s = await res.json();
     $("#run").elements.mode.value = s.mode;
     $("#run").elements.slides.value = s.slides;
+    $("#run").elements.allow_filled.checked = !!s.allow_filled;
     if (s.attached) {
       attached = s.attached;
       drawAttached();

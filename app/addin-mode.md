@@ -26,6 +26,10 @@ and any pictures or icons already on it. Note:
 2. Skip any record with `status` other than `approved`, a `style` that is not
    the deck's, an `avoid_for` that matches the item, or an id or tag on the
    regional block list (`style-guide.md`, section 7).
+   Skip every `filled` icon unless the designer has explicitly said filled
+   icons are fine for this deck. Never decide that yourself: if a filled icon
+   would fit, ask first. A deck whose own icons are filled still gets
+   `outline` icons until they say so.
 3. If the concept is missing or only weak icons remain, look through the
    records in the `category` that fits the concept (tags, avoid for,
    contexts, pairs with).

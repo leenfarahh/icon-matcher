@@ -12,6 +12,7 @@ from pathlib import Path
 from . import config, library_edit, pipeline, render, report
 from .icon_tools import recolor_svg
 from .library import Library
+from .models import allowed_styles
 
 SAVED_REPORT = "report.json"
 UPLOADS = "uploads"
@@ -28,10 +29,12 @@ class RunError(ValueError):
         self.detail, self.status = message, status
 
 
-def run(job_dir: Path, deck_file: str, library: Library, mode: str, slides: list[int] | None) -> dict:
+def run(job_dir: Path, deck_file: str, library: Library, mode: str, slides: list[int] | None,
+        allow_filled: bool = False) -> dict:
     """Run the deck in job_dir and save the report with it, so chosen suggestions can be inserted later without
-    running the deck (or Claude) again. Returns the report (report.to_dict)."""
-    result = report.to_dict(pipeline.run(job_dir / deck_file, library, mode, slides))
+    running the deck (or Claude) again. Returns the report (report.to_dict). allow_filled: the designer explicitly
+    okayed filled icons for this run."""
+    result = report.to_dict(pipeline.run(job_dir / deck_file, library, mode, slides, allow_filled=allow_filled))
     (job_dir / SAVED_REPORT).write_text(json.dumps({"deck_file": deck_file, **result}), encoding="utf-8")
     return result
 
@@ -54,9 +57,11 @@ def output(job_dir: Path) -> Path | None:
     return next(iter(job_dir.glob("*_icons.pptx")), None)
 
 
-def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, str]) -> dict:
+def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, str],
+          allow_filled: bool = False) -> dict:
     """Insert the chosen picks, and the icons chosen for flagged PL placeholders (flag position -> a library id,
-    or "upload:<id>" for one uploaded to this run), into a copy of the deck. The copy holds exactly these icons."""
+    or "upload:<id>" for one uploaded to this run), into a copy of the deck. The copy holds exactly these icons.
+    A filled icon is accepted only when the designer okayed filled icons, for the run or now (allow_filled)."""
     rep = saved(job_dir)
     chosen = sorted(set(picks))
     if not chosen and not choices:
@@ -67,9 +72,14 @@ def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, 
     if any(not 0 <= n < len(flags) or not flags[n].get("spot") for n in choices):
         raise RunError("that placeholder can't take a chosen icon: run the deck again")
     style = rep["settings"]["style"]   # an approved icon in the deck's style (options or a search), or an upload
+    styles = allowed_styles(style, allow_filled or rep["settings"].get("allow_filled", False))
     for icon_id in choices.values():
         upload = upload_path(job_dir, icon_id)
-        if upload is None and (not (icon := library.get(icon_id)) or icon.style != style):
+        icon = library.get(icon_id) if upload is None else None
+        if icon is not None and icon.style in config.OPT_IN_STYLES and icon.style not in styles:
+            raise RunError(f"{icon_id} is a {icon.style} icon: {icon.style} icons are used only when the designer "
+                           "okays them")
+        if upload is None and (icon is None or icon.style not in styles):
             raise RunError(f"choose approved {style} icons from the library, or upload one")
         if upload is not None and not upload.exists():
             raise RunError("an uploaded icon is missing: upload it again")
@@ -87,7 +97,7 @@ def library_index(library: Library) -> dict:
     icons only."""
     return {"icons": [asdict(i) for i in library.all.values()], "concept_map": library.concept_map,
             "warnings": library.warnings, "indexed_from_filenames": library.indexed_from_filenames,
-            "llm": config.USE_LLM}
+            "llm": config.USE_LLM, "opt_in_styles": sorted(config.OPT_IN_STYLES)}
 
 
 def icon_svg(svg: bytes, color: str = "") -> bytes:

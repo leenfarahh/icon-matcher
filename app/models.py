@@ -1,5 +1,17 @@
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
+
+from . import config
+
+
+def allowed_styles(style: str, allow_filled: bool = False) -> set[str]:
+    """The icon styles a run may use: the deck's, plus the opt-in ones (filled) once the designer okays them."""
+    return {style} | (set(config.OPT_IN_STYLES) if allow_filled else set())
+
+
+def style_set(style: str | Iterable[str]) -> set[str]:
+    """One style or several, as a set (a lone string is one style, not its letters)."""
+    return {style} if isinstance(style, str) else set(style)
 
 
 @dataclass
@@ -72,6 +84,11 @@ class DeckSettings:
     tiers: dict
     sources: dict               # where each setting came from, for the report
     color_slot: str = "accent1"  # the deck color: always a theme slot (accent1, tx1, bg1, ...)
+    allow_filled: bool = False   # the designer okayed filled icons (config.OPT_IN_STYLES) for this run
+
+    @property
+    def styles(self) -> set[str]:
+        return allowed_styles(self.style, self.allow_filled)
 
 
 @dataclass

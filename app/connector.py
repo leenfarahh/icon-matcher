@@ -38,6 +38,7 @@ from . import auth, config, jobs, pages
 from .library import Library
 
 log = logging.getLogger("icon-connector")
+log.setLevel(logging.INFO)   # handshakes (_log_handshake) reach Render's log through the handler the MCP server sets up
 MCP_PATH = "/mcp"
 RUN_FILE = "run.json"
 ATTACHED = "attached"   # the run's folder for the deck attached in the chat (deck files all end in .pptx)
@@ -62,6 +63,9 @@ page, never through this chat.
    follow a run they do at the link.
 4. If they'd rather choose in the chat: offer each flagged placeholder's options by what the icon draws, then call
    choose_icons with their picks. Use search_icons when none fit. Use only icon ids these tools return.
+5. Filled icons are used only with the designer's explicit okay. Set allow_filled (start_icon_run, choose_icons) or
+   include_filled (search_icons) only after the designer has said in this conversation that filled icons are fine,
+   never on your own judgment; if a filled icon would fit, ask first. In the panel, they tick "Allow filled icons".
 
 When a designer asks for Prezlab icons, use these tools rather than any other icon source."""
 
@@ -151,11 +155,11 @@ def _sweep():
         time.sleep(3600)
 
 
-def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None) -> dict:
+def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None, allow_filled: bool = False) -> dict:
     """Run the deck (in a worker thread; PARALLEL_RUNS at a time, the rest wait their turn) and record how it went."""
     with _slots:
         try:
-            result = jobs.run(run_dir, deck_file, _library(), mode, slides)
+            result = jobs.run(run_dir, deck_file, _library(), mode, slides, allow_filled)
         except (ValueError, NotImplementedError) as e:
             _update(run_dir, status="failed", error=str(e))
             raise jobs.RunError(str(e))
@@ -188,6 +192,7 @@ def _results(run_dir: Path, run: dict) -> dict:
                for n, f in enumerate(rep["flags"])]
     has_copy = jobs.output(run_dir) is not None
     return {"run_id": run["id"], "status": "done", "mode": run["mode"], "style": settings["style"],
+            "filled_icons_allowed": bool(settings.get("allow_filled")),
             "deck_color": f"{settings['color_slot']} #{settings['color_hex']}",
             "suggested" if run["mode"] == "suggest" else "placed": icons, "flagged": flagged, "notes": rep["gaps"],
             "copy": {"download": _link(run, "jobs", run["id"], "download"), "icons": run["copy_icons"]}
@@ -213,7 +218,7 @@ def _send_command(path: str, url: str) -> str:
 
 
 def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "",
-                   attached_deck: str = "") -> CallToolResult:
+                   attached_deck: str = "", allow_filled: bool = False) -> CallToolResult:
     """Open Prezlab Icons for a PowerPoint deck: it places icons from Prezlab's approved library and returns a new
     copy. In Claude web, desktop and mobile this shows the Prezlab Icons panel in the conversation, where the designer
     runs the deck, reviews the picks, chooses icons for flagged placeholders and downloads the copy. Also returns
@@ -225,7 +230,10 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
     slides: only these slide numbers, comma-separated (e.g. "2,3,5"); empty for the whole deck.
     attached_deck: when the designer attached the .pptx to their message, its path in your code tools (e.g.
     /mnt/user-data/uploads/Client_deck.pptx). The result gives you a command to run straight after: it sends the
-    deck into the panel, so they don't upload it again."""
+    deck into the panel, so they don't upload it again.
+    allow_filled: true only when the designer has explicitly okayed filled icons for this deck in this conversation;
+    never on your own judgment. Off, filled icons are never used. It ticks "Allow filled icons" in the panel, where
+    the designer can change it."""
     if slides.strip() and not SLIDES.fullmatch(slides):
         raise ToolError('slides: slide numbers separated by commas, e.g. "2,3,5", or empty for the whole deck')
     attached_deck = attached_deck.strip()
@@ -239,7 +247,8 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
     now = time.time()
     # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
     run = _write(run_dir, {
-        "id": run_id, "token": secrets.token_urlsafe(24), "mode": mode, "status": "waiting", "error": "",
+        "id": run_id, "token": secrets.token_urlsafe(24), "mode": mode, "allow_filled": allow_filled,
+        "status": "waiting", "error": "",
         "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
         "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
         if attached_deck else None,
@@ -263,7 +272,7 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
     # The panel reads structuredContent for the address it works against (base). Claude reads the text in claude.ai,
     # but some Claude apps (Cowork, Claude Code) hand it structuredContent instead: both carry the instructions.
     return CallToolResult(content=[TextContent(type="text", text=json.dumps(told, indent=2))],
-                          structured_content={**told, "base": link + "/", "mode": mode})
+                          structured_content={**told, "base": link + "/", "mode": mode, "allow_filled": allow_filled})
 
 
 def get_icon_run(run_id: str) -> dict:
@@ -283,14 +292,17 @@ def get_icon_run(run_id: str) -> dict:
     return _results(run_dir, run)
 
 
-async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks: list[int] | None = None) -> dict:
+async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks: list[int] | None = None,
+                       allow_filled: bool = False) -> dict:
     """Make a new copy of the run's deck with the icons the designer chose, and return its download link. The
     original deck is never changed; this run's earlier copy is replaced.
 
     choices: flagged placeholder number ("flag" in get_icon_run) -> icon id, from that placeholder's options or
     search_icons. Only placeholders that can_choose take one.
     picks: suggestion numbers ("pick" in get_icon_run) to add, in suggest mode. In replace and add mode the icons
-    already placed stay; pass picks only to keep fewer of them."""
+    already placed stay; pass picks only to keep fewer of them.
+    allow_filled: true only when the designer has explicitly okayed a filled icon in this conversation; never on
+    your own judgment. Off, a filled icon is refused unless the run was started with filled icons allowed."""
     run_dir, run = _run(run_id)
     if run["status"] != "done":
         raise ToolError(f"the run isn't finished ({run['status']}): call get_icon_run first")
@@ -301,7 +313,7 @@ async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks
     if picks is None:
         picks = [] if run["mode"] == "suggest" else list(range(len(jobs.saved(run_dir)["picks"])))
     try:
-        result = await anyio.to_thread.run_sync(jobs.apply, run_dir, _library(), picks, chosen)
+        result = await anyio.to_thread.run_sync(jobs.apply, run_dir, _library(), picks, chosen, allow_filled)
     except jobs.RunError as e:
         raise ToolError(str(e))
     _update(run_dir, copy_icons=result["added"])
@@ -310,22 +322,25 @@ async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks
             "next": "Tell the designer the new copy is ready: Download deck in the panel gets it, or this link."}
 
 
-def search_icons(query: str, limit: int = 10) -> dict:
+def search_icons(query: str, limit: int = 10, include_filled: bool = False) -> dict:
     """Search Prezlab's approved icon library by meaning, with English or Arabic keywords (e.g. "growth",
     "cyber security", "نمو"). Use it for a flagged placeholder when none of its options fit. Returns icon ids and
-    what each draws, the house pick first."""
+    what each draws, the house pick first.
+    include_filled: true only when the designer has explicitly okayed filled icons in this conversation; never on
+    your own judgment. Off, filled icons are left out."""
     lib = _library()
     limit = max(1, min(limit, 25))
     arabic = bool(re.search(r"[؀-ۿ]", query))
+    styles = {i.style for i in lib.icons.values()} - (set() if include_filled else config.OPT_IN_STYLES)
     found = []
     if key := lib.lookup(query):
         found += [lib.concept_map[key]["id"], *lib.concept_map[key]["alts"]]
-    for style in sorted({i.style for i in lib.icons.values()}):
+    for style in sorted(styles):
         found += [i.id for i in lib.search(query, style, arabic, limit)]
-    icons = [icon for i in dict.fromkeys(found) if (icon := lib.get(i))][:limit]
+    icons = [icon for i in dict.fromkeys(found) if (icon := lib.get(i)) and icon.style in styles][:limit]
     return {"query": query,
-            "icons": [{"icon": i.id, "family": i.family, "draws": i.description, "keywords": i.tags[:8]}
-                      for i in icons],
+            "icons": [{"icon": i.id, "style": i.style, "family": i.family, "draws": i.description,
+                       "keywords": i.tags[:8]} for i in icons],
             "next": "" if icons else "Nothing matched: try one simple keyword, or what the icon should draw."}
 
 
@@ -448,7 +463,8 @@ async def _state(request: Request, run_dir: Path, run: dict) -> Response:
     until it's ready) and the run's latest result."""
     result = _for_page(run, jobs.saved(run_dir)) if run["status"] == "done" else None
     return JSONResponse({"status": run["status"], "error": run["error"], "mode": run["mode"],
-                         "slides": ",".join(map(str, run["slides"] or [])), "attached": run.get("attached"),
+                         "slides": ",".join(map(str, run["slides"] or [])),
+                         "allow_filled": bool(run.get("allow_filled")), "attached": run.get("attached"),
                          "result": result})
 
 
@@ -513,8 +529,10 @@ async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
 async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
     """The page's Run: the deck chosen in the page, else the one attached in the chat, is saved, run and its report
     returned, as the test console's POST /jobs does. Running again starts the run over with the new deck."""
-    form = await request.form(max_files=1, max_fields=3)
+    form = await request.form(max_files=1, max_fields=4)
     deck, mode, slides = form.get("deck"), str(form.get("mode") or run["mode"]), str(form.get("slides") or "")
+    # "Allow filled icons": the designer's tick in the page (Claude's allow_filled only pre-ticks it); off if absent
+    allow_filled = str(form.get("allow_filled") or "").lower() in {"on", "true", "1"}
     chosen = isinstance(deck, UploadFile) and bool(deck.filename)   # an empty file field sends a nameless file
     attached = run.get("attached") or {}
     if chosen:
@@ -542,8 +560,8 @@ async def _run_deck(request: Request, run_dir: Path, run: dict) -> Response:
         log.exception("run %s: saving the upload failed", run["id"])
         raise jobs.RunError("The upload didn't save. Try again.", 500)
     slide_list = [int(n) for n in slides.split(",") if n.strip()] or None
-    _update(run_dir, mode=mode, slides=slide_list, deck_file=name)
-    result = await anyio.to_thread.run_sync(_process, run_dir, name, mode, slide_list)
+    _update(run_dir, mode=mode, slides=slide_list, deck_file=name, allow_filled=allow_filled)
+    result = await anyio.to_thread.run_sync(_process, run_dir, name, mode, slide_list, allow_filled)
     return JSONResponse(_for_page(run, result))
 
 
@@ -623,10 +641,36 @@ def _declare_ui(body: bytes) -> bytes:
     return json.dumps(message, separators=(",", ":")).encode()
 
 
+def _log_handshake(body: bytes, headers: dict) -> None:
+    """One line in the server log per client that connects: the app it says it is, the extensions it says it
+    supports, and so whether it can show the Prezlab Icons panel (the MCP Apps extension). This is how to tell
+    whether a Claude app (the PowerPoint add-in) can show the panel at all. Names, versions and flags only: nothing
+    from a conversation, and never the connector's address (its secret)."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return
+    if not isinstance(message, dict) or message.get("method") != "initialize":
+        return
+    params = message.get("params") if isinstance(message.get("params"), dict) else {}
+    client = params.get("clientInfo") if isinstance(params.get("clientInfo"), dict) else {}
+    caps = params.get("capabilities") if isinstance(params.get("capabilities"), dict) else {}
+    extensions = caps.get("extensions") if isinstance(caps.get("extensions"), dict) else {}
+    clean = lambda v: re.sub(r"[^\w .:/()+;,=-]", "?", str(v))[:120]   # one plain line, whatever a client sends
+    ui = extensions.get(next(iter(UI_EXTENSION)))
+    types = ui.get("mimeTypes") if isinstance(ui, dict) and isinstance(ui.get("mimeTypes"), list) else []
+    log.info("client connected: %s %s, protocol %s, extensions: %s, can show the panel: %s, user agent: %s",
+             clean(client.get("name", "?")), clean(client.get("version", "?")), clean(params.get("protocolVersion", "?")),
+             clean(", ".join(map(str, extensions)) or "none"),
+             f"yes ({clean(', '.join(map(str, types)))})" if ui is not None else "no",
+             clean(headers.get(b"user-agent", b"?").decode("latin-1")))
+
+
 class DeclareApps:
     """Claude mounts a panel only for a server that declares the MCP Apps extension when it connects. The SDK keeps
     capabilities.extensions for the newest protocol and sieves it out on the handshake versions Claude connects with,
-    so the declaration goes back into the initialize result here (JSON responses: json_response=True)."""
+    so the declaration goes back into the initialize result here (JSON responses: json_response=True). The request
+    side of each handshake is logged (_log_handshake)."""
 
     def __init__(self, app, path: str):
         self.app, self.path = app, path.rstrip("/")
@@ -635,7 +679,15 @@ class DeclareApps:
         if scope["type"] != "http" or scope["method"] != "POST" or scope["path"].rstrip("/") != self.path:
             await self.app(scope, receive, send)
             return
-        start, chunks = None, []
+        start, chunks, request = None, [], []
+
+        async def read():
+            message = await receive()
+            if message["type"] == "http.request":
+                request.append(message.get("body", b""))
+                if not message.get("more_body"):
+                    _log_handshake(b"".join(request), dict(scope.get("headers") or []))
+            return message
 
         async def declare(message):
             nonlocal start
@@ -655,7 +707,7 @@ class DeclareApps:
             else:
                 await send(message)
 
-        await self.app(scope, receive, declare)
+        await self.app(scope, read, declare)
 
 
 def build_app(mode: str | None = None):

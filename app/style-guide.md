@@ -18,8 +18,8 @@ you can judge the cases the rule doesn't name.
 
 | Rule | Standard |
 |---|---|
-| Style | One style per deck; match existing icons if present |
-| Family | One icon family per slide's set (simple or detailed) |
+| Style | One style per deck; match existing icons if present. Filled icons only with the designer's explicit okay |
+| Family | One icon family per slide's set (simple, detailed or filled) |
 | Weight | Stroke weight close to body text weight |
 | Size | Fixed tiers (card icon, list icon, hero icon) set per brand |
 | Color | Single brand color or text color; no multicolor |
@@ -100,15 +100,23 @@ designer has to find and remove.
 
 **Style.** If the deck already has icons, use their style (the inspection
 reports `deck_icon_style`). If they are mixed, use the majority and report the
-others as inconsistent. With no icons, use the library's main style. Never mix
-outline and filled in one deck: they read as two design hands.
+others as inconsistent. With no icons, use the library's main style. Don't mix
+outline and filled in one deck: they read as two design hands. The one
+exception is the designer's okay, below.
+
+**Filled icons need an okay.** Use filled icons only when the designer has
+explicitly said filled icons are fine for this deck; never decide it for them,
+and ask first if one would fit. Until then a deck whose own icons are filled
+still gets outline icons. Once they okay it, filled icons may join the deck,
+but only as a whole slide's set (their own `filled` family), never beside
+outline icons on one slide.
 
 **Family.** Within one style the library has two visual families (`family` in
 `icons.json`): `simple`, bold minimal glyphs (the house set), and `detailed`,
-finer line drawings with more elements. Side by side they read as two design
-hands, just as outline and filled do, so a slide's set never mixes them: pick
-the family that has a genuine icon for every item first, then every icon from
-it.
+finer line drawings with more elements; filled icons are their own family,
+`filled`. Side by side they read as two design hands, just as outline and
+filled do, so a slide's set never mixes them: pick the family that has a
+genuine icon for every item first, then every icon from it.
 
 **Weight.** Outline icons should look about as heavy as the body text beside
 them. The library is normalized to one stroke weight per style, so the weight

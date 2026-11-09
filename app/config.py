@@ -33,6 +33,10 @@ PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed
 # or the deck's existing icons override these.
 DEFAULT_TIERS = {"list": 0.30, "card": 0.55, "column": 0.55, "hero": 1.20}
 DEFAULT_STYLE = "outline"
+# Icon styles used only with the designer's explicit okay for the run (its "allow filled icons" switch, off by
+# default): until then they are never picked, offered, searched or accepted, and a deck whose own icons are in one
+# of these styles still gets DEFAULT_STYLE icons.
+OPT_IN_STYLES = {"filled"}
 SAFE_MARGIN_IN = 0.4
 TEXT_INSET_IN = 0.1
 # A slide gets icons on one set only: its main component (icon holders, diagram nodes, then headings, then

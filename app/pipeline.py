@@ -17,7 +17,8 @@ HERO_SHARE = 0.75   # an existing icon at least this share of the hero tier coun
 
 
 def run(deck_path: Path, library: Library, mode: str = "add",
-        slides: list[int] | None = None, out_path: Path | None = None) -> Report:
+        slides: list[int] | None = None, out_path: Path | None = None, allow_filled: bool = False) -> Report:
+    """allow_filled: the designer explicitly okayed filled icons for this run; never set it on their behalf."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
     if mode == "standardize":
@@ -26,7 +27,7 @@ def run(deck_path: Path, library: Library, mode: str = "add",
     prs = Presentation(deck_path)
     refs = library.placeholders                                          # how PL logo placeholders look
     existing = deck.existing_icons(prs, refs)                            # 1. read
-    settings = deck.detect_settings(prs, library, existing)
+    settings = deck.detect_settings(prs, library, existing, allow_filled)
     notes = []
     items = deck.read_items(prs, slides, refs, notes)
     # Where the designer left PL logo placeholders, the icons replace them, and nothing else on those slides
@@ -61,7 +62,7 @@ def run(deck_path: Path, library: Library, mode: str = "add",
     queue = {n: [m for k, m in enumerate(sets) if not config.ONE_ICON_SET_PER_SLIDE or k == 0
                  or m[0].rank <= config.FALLBACK_MAX_RANK] for n, sets in by_slide.items()}
     candidates = [i for sets in queue.values() for m in sets for i in m]
-    concept_notes = concepts.extract(candidates, library, settings.style)  # 2. Claude picks one icon per item
+    concept_notes = concepts.extract(candidates, library, settings.styles)  # 2. Claude picks one icon per item
 
     # 3-5a. Round by round, each slide still without icons offers its next candidate. Candidates with the same
     # structure (family) are decided together: icons on all or none, one placement. A set's icons count as
@@ -111,13 +112,13 @@ def _offer(flags: list[Flag], picks: list[Pick], library: Library, settings, prs
     slide last) and the spot the chosen icon takes: the placeholder's place, in the color an icon there would
     get, with what's behind it (for previews). Returns notes for the report."""
     open_flags = [f for f in flags if f.item.placeholder]
-    found, notes = concepts.closest([f.item for f in open_flags], library, settings.style)
+    found, notes = concepts.closest([f.item for f in open_flags], library, settings.styles)
     on_slide = {(p.item.slide, p.icon.id) for p in picks}
     stand_ins = []
     for f, near in zip(open_flags, found):
         text = f.item.text.lower()
         usable = [i for i in dict.fromkeys([(f.item.unsure or ("",))[0], *f.options, f.item.icon_pick or "", *near])
-                  if (icon := library.get(i)) and icon.style == settings.style
+                  if (icon := library.get(i)) and icon.style in settings.styles
                   and not any(a.lower() in text for a in icon.avoid_for)]
         f.options = sorted(usable, key=lambda i: (f.item.slide, i) in on_slide)[:concepts.OPTIONS]
         left, top, w, h = f.item.placeholder["box"]

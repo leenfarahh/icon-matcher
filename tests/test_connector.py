@@ -106,8 +106,8 @@ def test_start_icon_run_opens_the_panel_and_gives_claude_the_link_for_clients_wi
         assert panel["link"].startswith(f"{BASE}/runs/{told['run_id']}/") and panel["mode"] == "suggest"
         assert "panel" in told["next"] and "link" in told["next"]
         state = c.get(panel["base"] + "state", headers={"Origin": PANEL})
-        assert state.json() == {"status": "waiting", "error": "", "mode": "suggest", "slides": "2,3", "attached": None,
-                                "result": None}
+        assert state.json() == {"status": "waiting", "error": "", "mode": "suggest", "slides": "2,3",
+                                "allow_filled": False, "attached": None, "result": None}
         assert "attached_deck" not in told
         assert state.headers["access-control-allow-origin"] == PANEL
 
@@ -204,6 +204,26 @@ def test_claude_is_told_the_panel_extension_on_every_handshake_version(env):
         assert "extensions" not in json.dumps(rpc(c, "tools/list"))           # only the handshake changes
 
 
+def test_each_client_that_connects_is_logged_with_whether_it_can_show_the_panel(env, monkeypatch, caplog):
+    """How to tell whether a Claude app (the PowerPoint add-in) can show the panel: its handshake, in the log."""
+    monkeypatch.setattr(config, "MCP_SECRET", SECRET)
+    caplog.set_level("INFO", logger="icon-connector")
+    with client("secret") as c:
+        for name, extensions in (("claude-ai", connector.UI_EXTENSION), ("office\nadd-in", {})):
+            c.post(f"/mcp/{SECRET}", headers={**MCP, "User-Agent": "Claude-User"}, json={
+                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+                    "protocolVersion": "2025-06-18", "clientInfo": {"name": name, "version": "1.2"},
+                    "capabilities": {"extensions": extensions}}})
+        c.post(f"/mcp/{SECRET}", headers=MCP, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    lines = [r.getMessage() for r in caplog.records if r.name == "icon-connector"]
+    assert lines == [
+        "client connected: claude-ai 1.2, protocol 2025-06-18, extensions: io.modelcontextprotocol/ui, "
+        "can show the panel: yes (text/html;profile=mcp-app), user agent: Claude-User",
+        "client connected: office?add-in 1.2, protocol 2025-06-18, extensions: none, can show the panel: no, "
+        "user agent: Claude-User"]                    # one plain line each, and only handshakes are logged
+    assert SECRET not in caplog.text                   # never the connector's secret address
+
+
 def test_an_attached_decks_path_reaches_curl_whole():
     path = '/mnt/user-data/uploads/Q3, final; v2 "client".pptx'      # commas and semicolons separate curl -F parts
     argv = shlex.split(connector._send_command(path, "https://x.onrender.com/runs/a/b/deck"))
@@ -263,6 +283,31 @@ def test_flagged_placeholders_get_the_icons_the_designer_chose_or_uploaded(env, 
         (env / "copy.pptx").write_bytes(c.get(job + "download").content)
         shapes = [s.name for s in Presentation(env / "copy.pptx").slides[0].shapes]
         assert sum(n.startswith("Icon - ") for n in shapes) == 2 and "PL logo" not in shapes
+
+
+def test_filled_icons_need_the_designers_okay_in_the_connector(env):
+    from test_pipeline import add_filled_icons
+    add_filled_icons(env / "lib")
+    connector._lib.clear()
+    deck = env / "deck.pptx"
+    flagged_deck(deck)
+    with client() as c:
+        assert call(c, "search_icons", query="location")[1]["icons"] == []          # left out of a search
+        shown = call(c, "search_icons", query="location", include_filled=True)[1]["icons"]
+        assert [(i["icon"], i["style"]) for i in shown] == [("pin-solid", "filled")]
+
+        told, panel = start(c)
+        run_deck(c, panel["base"], deck)
+        assert call(c, "choose_icons", run_id=told["run_id"], choices={"0": "pin-solid"}) == \
+            (True, "pin-solid is a filled icon: filled icons are used only when the designer okays them")
+        added = call(c, "choose_icons", run_id=told["run_id"], choices={"0": "pin-solid"}, allow_filled=True)[1]
+        assert added["icons_in_copy"] == 1
+
+        told, panel = start(c, allow_filled=True)                                 # Claude only pre-ticks the box
+        assert panel["allow_filled"] is True and c.get(panel["base"] + "state").json()["allow_filled"] is True
+        assert run_deck(c, panel["base"], deck).json()["settings"]["allow_filled"] is False   # the designer unticked
+        assert run_deck(c, panel["base"], deck, allow_filled="on").json()["settings"]["allow_filled"] is True
+        assert call(c, "get_icon_run", run_id=told["run_id"])[1]["filled_icons_allowed"] is True
 
 
 def test_the_library_tab_reads_the_library_but_cant_change_it(env):

@@ -623,8 +623,9 @@ def existing_icons(prs: Presentation, refs=()) -> list[dict]:
     return found
 
 
-def detect_settings(prs: Presentation, library, existing: list[dict]) -> DeckSettings:
-    """Fallback order: library style guide > deck's existing icons > defaults."""
+def detect_settings(prs: Presentation, library, existing: list[dict], allow_filled: bool = False) -> DeckSettings:
+    """Fallback order: library style guide > deck's existing icons > defaults. An opt-in style (filled) is the deck's
+    style only with the designer's okay (allow_filled); otherwise the deck gets the default style."""
     sg, sources = library.style_guide, {}
     tiers = dict(config.DEFAULT_TIERS)
     scale = (prs.slide_width / EMU) / 13.333
@@ -641,6 +642,12 @@ def detect_settings(prs: Presentation, library, existing: list[dict]) -> DeckSet
     styles = [library.get(e["icon_id"]).style for e in existing if e["icon_id"] and library.get(e["icon_id"])]
     style = sg.get("style") or (Counter(styles).most_common(1)[0][0] if styles else config.DEFAULT_STYLE)
     sources["style"] = "library style guide" if sg.get("style") else ("deck's existing icons" if styles else "default")
+    if style in config.OPT_IN_STYLES and not allow_filled:
+        sources["style"] = (f"default: the {sources['style']} say {style}, and {style} icons are used only when the "
+                            "designer okays them for the run")
+        style = config.DEFAULT_STYLE
+    if allow_filled:
+        sources["style"] += "; the designer okayed filled icons for this run"
 
     # Colors always come from the theme. The deck color: the existing icons' theme color when they agree
     # (style guide, Color), else accent1. Each icon may still switch slot for contrast (colors.assign).
@@ -660,4 +667,5 @@ def detect_settings(prs: Presentation, library, existing: list[dict]) -> DeckSet
     color = colors.Theme(main).slot_hex(slot)
     sources["color"] = (f"theme {slot} ({why}); an icon switches to its label's color or the theme's dark or "
                         f"light color where {slot} has under 3:1 contrast with what is behind it")
-    return DeckSettings(style=style, color_hex=color, tiers=tiers, sources=sources, color_slot=slot)
+    return DeckSettings(style=style, color_hex=color, tiers=tiers, sources=sources, color_slot=slot,
+                        allow_filled=allow_filled)
