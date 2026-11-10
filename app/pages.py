@@ -57,6 +57,7 @@ input::placeholder { color: var(--slate); opacity: .7; }
   padding: 12px 20px; border: 0; border-radius: 999px; background: var(--teal); color: var(--shell); font: inherit;
   font-weight: 600; letter-spacing: -0.02em; text-decoration: none; cursor: pointer; }
 .button:hover, button:hover { background: var(--teal-700); }
+button:disabled, button:disabled:hover { background: var(--teal-700); opacity: .75; cursor: progress; }
 button.link { display: inline; width: auto; margin: 0; padding: 0; background: none; color: inherit; font-weight: 500;
   letter-spacing: inherit; text-decoration: underline; text-underline-offset: 2px; }
 button.link:hover { background: none; color: var(--teal); }
@@ -76,7 +77,24 @@ form.quiet { margin: 0; }
 changed.</p></div>
 <p class="fine">Internal tool. Treat every deck as client-confidential.</p>
 <div class="motif" aria-hidden="true"><span></span><span></span></div></section>
-<main class="work"><div class="inner">%BODY%</div></main></body></html>""".replace("%WORDMARK%", WORDMARK)
+<main class="work"><div class="inner">%BODY%</div></main>
+<script>
+// Each form goes once, its button saying what's happening, as in Image Studio: a second click while Odoo answers would
+// send the same step twice. Back to a page the browser kept, its forms work again.
+document.addEventListener("submit", function (event) {
+  var form = event.target, button = form.querySelector("button[data-busy]");
+  if (form.dataset.sent) { event.preventDefault(); return; }
+  form.dataset.sent = "1";
+  if (button) { button.dataset.label = button.textContent; button.textContent = button.dataset.busy; button.disabled = true; }
+});
+addEventListener("pageshow", function () {
+  document.querySelectorAll("form[data-sent]").forEach(function (form) {
+    var button = form.querySelector("button[data-busy]");
+    delete form.dataset.sent;
+    if (button && button.dataset.label) { button.textContent = button.dataset.label; button.disabled = false; }
+  });
+});
+</script></body></html>""".replace("%WORDMARK%", WORDMARK)
 
 
 def render(body: str, status: int = 200, refresh: bool = False) -> HTMLResponse:

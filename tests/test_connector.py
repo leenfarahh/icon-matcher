@@ -461,17 +461,20 @@ def test_token_mode_needs_the_token_for_tools_but_not_for_the_run_pages(monkeypa
 
 ODOO = "https://prezlab.odoo.test"
 TOTP_PAGE = '<form><input type="hidden" name="csrf_token" value="csrf-0123456789"><input name="totp_token"></form>'
+LOGIN_PAGE = ('<form><input type="hidden" name="csrf_token" value="csrf-9876543210"><input name="login">'
+              '<input type="password" name="password"></form>')
 WEB = "/web"
 
 
 class FakeOdoo:
     """Odoo's login endpoints, as Image Studio found them: designer@ signs in with a password, twofa@ also needs the
     code 123456 (or a trusted device), client@ is a portal user. Odoo sessions are s-<uid> once signed in, p-<uid>
-    while waiting for a code."""
+    while waiting for a code. Like Odoo 17, finishing a sign-in retires the waiting session: from then on it's
+    unknown, so the code page sends it to the login page and a code posted with it fails the CSRF check."""
     USERS = {"designer@prezlab.com": (7, False), "twofa@prezlab.com": (8, True), "client@example.com": (9, False)}
 
     def __init__(self):
-        self.devices, self.passwords_sent = set(), 0
+        self.devices, self.passwords_sent, self.retired, self.codes_accepted = set(), 0, set(), 0
 
     def __call__(self, request):
         from urllib.parse import parse_qs
@@ -483,16 +486,27 @@ class FakeOdoo:
             uid, twofa = self.USERS.get(p["login"].lower(), (0, False))
             if not uid or p["password"] != "pw" or p["db"] != "prezlab":
                 return httpx2.Response(200, json={"error": {"data": {"message": "Access Denied"}}})
+            self.retired.discard(f"p-{uid}")
             return httpx2.Response(200, json={"result": {"uid": False if twofa else uid}},
                                    headers={"set-cookie": f"session_id={'p' if twofa else 's'}-{uid}; Path=/"})
+        if path == "/web/login":
+            return httpx2.Response(200, text=LOGIN_PAGE)
+        waiting = session.startswith("p-") and session not in self.retired
         if path == "/web/login/totp" and request.method == "GET":
-            if session.startswith("p-") and cookies.get("td_id") in self.devices:
+            if not waiting:
+                return httpx2.Response(303, headers={"location": "/web/login"})
+            if cookies.get("td_id") in self.devices:
+                self.retired.add(session)
                 return httpx2.Response(303, headers={"location": "/odoo", "set-cookie": f"session_id=s-{session[2:]}"})
-            return httpx2.Response(200, text=TOTP_PAGE if session.startswith("p-") else "<form>login</form>")
+            return httpx2.Response(200, text=TOTP_PAGE)
         if path == "/web/login/totp":
             form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            if not waiting:
+                return httpx2.Response(400, text="Session expired (invalid CSRF token)")
             if form.get("totp_token") != "123456" or form.get("csrf_token") != "csrf-0123456789":
                 return httpx2.Response(200, text=TOTP_PAGE)
+            self.retired.add(session)
+            self.codes_accepted += 1
             self.devices.add(f"td-{session}")
             return httpx2.Response(303, headers=[("location", "/odoo"), ("set-cookie", f"td_id=td-{session}; Path=/"),
                                                  ("set-cookie", f"session_id=s-{session[2:]}; Path=/")])
@@ -513,6 +527,7 @@ def fake_odoo(monkeypatch):
     monkeypatch.setattr(config, "ODOO_DB", "prezlab")
     monkeypatch.setattr(odoo, "TRANSPORT", httpx2.MockTransport(fake))
     monkeypatch.setattr(web, "_limits", web._Limits())
+    monkeypatch.setattr(web, "_code_steps", web._CodeSteps())
     return fake
 
 
@@ -579,6 +594,48 @@ def test_two_factor_asks_for_a_code_once_per_browser(env, fake_odoo):
 
     with client() as other:                                                       # another browser is asked
         assert "Enter your code" in sign_in(other, "twofa@prezlab.com").text
+
+
+def test_a_code_sent_again_after_it_worked_still_signs_in(env, fake_odoo):
+    """A refresh, or a second click the browser sends after the first, repeats the code for an Odoo session that Odoo
+    retired when it accepted the code. The repeat's answer is the one the browser shows, so it must be the sign-in."""
+    with client() as c:
+        sign_in(c, "twofa@prezlab.com")
+        pending = c.cookies.get(web.PENDING)
+        assert c.post(WEB, data={"code": "123456"}, follow_redirects=False).status_code == 303
+    with client() as repeat:                     # the browser, still holding the code step: it never saw that answer
+        repeat.cookies.set(web.PENDING, pending)
+        again = repeat.post(WEB, data={"code": "123456"}, follow_redirects=False)
+        assert again.status_code == 303 and again.headers["location"].startswith(f"{BASE}/runs/")
+        assert repeat.cookies.get(web.SESSION) and repeat.cookies.get(web.DEVICE)
+    assert fake_odoo.codes_accepted == 1
+
+
+def test_a_double_click_on_continue_sends_the_code_to_odoo_once(env, fake_odoo, monkeypatch):
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    async def slow(request):   # Odoo takes a moment over the code: long enough for a second click
+        if request.method == "POST" and request.url.path == "/web/login/totp":
+            await asyncio.sleep(0.3)
+        return fake_odoo(request)
+
+    monkeypatch.setattr(odoo, "TRANSPORT", httpx2.MockTransport(slow))
+    with client() as c, ThreadPoolExecutor(2) as clicks:
+        sign_in(c, "twofa@prezlab.com")
+        sent = [clicks.submit(c.post, WEB, data={"code": "123456"}, follow_redirects=False) for _ in range(2)]
+        answers = [click.result() for click in sent]
+    assert [a.status_code for a in answers] == [303, 303] and fake_odoo.codes_accepted == 1
+    assert all(a.headers["location"].startswith(f"{BASE}/runs/") for a in answers)
+
+
+def test_a_code_for_a_sign_in_odoo_already_ended_asks_to_sign_in_again(env, fake_odoo):
+    with client() as c:
+        sign_in(c, "twofa@prezlab.com")
+        fake_odoo.retired.add("p-8")             # Odoo ended the half-finished sign-in
+        ended = c.post(WEB, data={"code": "123456"})
+        assert ended.status_code == 401 and "expired" in ended.text and "changed its login page" not in ended.text
+        assert 'name="password"' in ended.text and 'name="password"' in c.get(WEB).text
 
 
 @pytest.mark.parametrize("login, message", [("client@example.com", "portal account"),

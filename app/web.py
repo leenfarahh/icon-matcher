@@ -9,7 +9,12 @@ What the page keeps lives in this browser's cookies, sealed with AES-256-GCM und
 - the two-factor step in progress (PENDING_MINUTES): the login and Odoo's half-finished session;
 - the trusted device (DEVICE_DAYS): the key Odoo gives a browser that entered a code, so it isn't asked again. Sealed,
   the browser can't read it; and it skips only the code, never the password.
-The password goes to Odoo only and is never stored or logged. Deleting KEY_FILE signs every browser out."""
+The password goes to Odoo only and is never stored or logged. Deleting KEY_FILE signs every browser out.
+
+Each code step reaches Odoo once (_CodeSteps): a code sent twice, by a second click or a refresh while Odoo answers,
+would otherwise fail on the session Odoo retired when it accepted the first, and that failure is what the browser shows.
+Like Image Studio's form, the pages also lock their button while a step is on its way (pages.py)."""
+import asyncio
 import base64
 import html
 import json
@@ -33,6 +38,7 @@ SESSION, PENDING, DEVICE = "pi_session", "pi_pending", "pi_device"
 SESSION_DAYS = 30
 PENDING_MINUTES = 15
 DEVICE_DAYS = 30
+REPEAT_SECONDS = 120   # how long a code step that signed in answers a repeat of it
 LIMITS = {"ip": (20, 300), "login": (6, 300)}   # sign-in attempts per address and per login, per 5 minutes, as before
 _keys: dict = {}
 
@@ -147,6 +153,39 @@ class _Limits:
 _limits = _Limits()
 
 
+class _CodeSteps:
+    """Each code step once per Odoo session. A repeat waits for the step in progress and, if that one signed in, gets
+    its result (for REPEAT_SECONDS). A refused code isn't kept, so the next code entered is tried. In memory (one
+    instance)."""
+
+    def __init__(self):
+        self.running: dict[str, list] = {}               # Odoo session: [its lock, requests holding or awaiting it]
+        self.signed_in: dict[str, tuple[float, tuple]] = {}   # Odoo session: (when, what its step returned)
+
+    async def once(self, session: str, step: Callable) -> tuple:
+        """step() returns (odoo.Outcome, anything that goes with it); repeats get the same pair."""
+        now = time.time()
+        self.signed_in = {k: v for k, v in self.signed_in.items() if v[0] > now - REPEAT_SECONDS}
+        entry = self.running.setdefault(session, [asyncio.Lock(), 0])
+        entry[1] += 1
+        try:
+            async with entry[0]:
+                if session in self.signed_in:
+                    log.info("web sign-in: a code step sent again; answered with its sign-in")
+                    return self.signed_in[session][1]
+                result = await step()
+                if result[0].user:
+                    self.signed_in[session] = (time.time(), result)
+                return result
+        finally:
+            entry[1] -= 1
+            if not entry[1]:
+                self.running.pop(session, None)
+
+
+_code_steps = _CodeSteps()
+
+
 def signed_in(request: Request) -> dict | None:
     """Who signed in on this browser ({"email", "name"}), while the sign-in lasts."""
     return _unseal("session", request.cookies.get(SESSION, ""))
@@ -168,7 +207,7 @@ def _login_page(error: str = "", status: int = 200, note: str = "") -> Response:
         'spellcheck="false" placeholder="you@prezlab.com" required autofocus>'
         '<label for="password">Password</label>'
         '<input type="password" id="password" name="password" autocomplete="current-password" required>'
-        "<button>Sign in</button></form>"
+        '<button data-busy="Checking with Odoo…">Sign in</button></form>'
         "<p><small>Your password goes to Odoo only; Prezlab Icons never stores it. Trouble signing in? Your Odoo "
         "account needs an email address on it: contact Operations if it doesn't.</small></p>", status)
 
@@ -179,7 +218,7 @@ def _code_page(login: str, error: str = "", status: int = 200) -> Response:
         f"authenticator app you use for Odoo.</p>{_problem(error)}"
         '<form method="post"><label for="code">Authenticator code</label>'
         '<input type="text" id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" '
-        'placeholder="123456" required autofocus><button>Continue</button></form>'
+        'placeholder="123456" required autofocus><button data-busy="Verifying…">Continue</button></form>'
         f"<p><small>After this, this browser won't be asked for a code for {DEVICE_DAYS} days.</small></p>"
         '<form method="post" class="quiet"><input type="hidden" name="restart" value="1"><p><small>Not you? '
         '<button class="link">Start again with a different account</button></small></p></form>', status)
@@ -188,7 +227,8 @@ def _code_page(login: str, error: str = "", status: int = 200) -> Response:
 def _start_page(user: dict) -> Response:
     return pages.render(
         f"<h1>Place icons in a deck</h1><p>Signed in as {html.escape(user['name'])}.</p>"
-        '<form method="post"><input type="hidden" name="start" value="1"><button>Start with a deck</button></form>'
+        '<form method="post"><input type="hidden" name="start" value="1">'
+        '<button data-busy="Opening…">Start with a deck</button></form>'
         f"<p><small>Each start opens a private page for one deck, kept for {config.RUN_TTL_HOURS:g} hours, where you "
         "can run it again with changes. Bookmark this page, not that one. In PowerPoint, save the deck before you "
         "upload it.</small></p>"
@@ -241,8 +281,16 @@ async def _sign_in(request: Request, form, pending: dict | None, start_run: Call
         return again("Too many attempts for this account. Wait a few minutes before trying again.", 429)
 
     device = _BrowserDevice(request)
+
+    async def step() -> tuple:
+        found = await odoo.login(login, password, code, pending["session"] if code_step else "", device)
+        return found, device.change   # the trusted device goes with the sign-in, to a repeat too
+
     try:
-        outcome = await odoo.login(login, password, code, pending["session"] if code_step else "", device)
+        if code_step:
+            outcome, device.change = await _code_steps.once(pending["session"], step)
+        else:
+            outcome, _ = await step()
     except Exception:
         log.exception("web sign-in: unexpected failure talking to Odoo")
         return again("Sign-in isn't available right now. Try again shortly.", 502)

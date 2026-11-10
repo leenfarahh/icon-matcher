@@ -9,6 +9,9 @@ this drives Odoo's own browser login endpoints, which understand codes:
    trusted-device key Odoo returns for next time (sealed, in this browser: web.py).
 4. Read who signed in, and accept only active internal users with an email on ODOO_ALLOWED_EMAIL_DOMAIN.
 
+Accepting a code (or a trusted device) makes Odoo retire the half-finished session, so a code sent again with it lands on
+Odoo's login page: that's an ended sign-in ("totp_expired"), not a changed page. web.py sends each code step once.
+
 This drives pages rather than an API, so an Odoo upgrade can break step 3; every failure comes back as a reason the
 sign-in page can explain. The password is never stored or logged."""
 import json
@@ -29,6 +32,7 @@ MAX_REDIRECTS = 10
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 "
               "Safari/537.36")
 TOTP_FIELD = re.compile(r"""name=["']totp_token["']""", re.I)
+PASSWORD_FIELD = re.compile(r"""name=["']password["']""", re.I)   # Odoo's login page
 TRANSPORT = None   # tests swap in an httpx2.MockTransport standing in for Odoo
 
 MESSAGES = {   # what the sign-in page says; deliberately vague about which half of a credential failed
@@ -39,6 +43,7 @@ MESSAGES = {   # what the sign-in page says; deliberately vague about which half
     "no_email": "Your Odoo account has no email address on it. Ask Operations to add one.",
     "domain_not_allowed": "This account is outside the domain approved for Prezlab Icons.",
     "odoo_unreachable": "Odoo isn't responding right now. Try again in a moment.",
+    "totp_expired": "This sign-in expired before your code went through. Sign in again.",
     "totp_unsupported": "Odoo's two-factor step couldn't be completed. Odoo may have changed its login page; "
                         "flag it to Operations.",
     "odoo_error": "Odoo rejected the sign-in request. If this repeats, flag it to Operations.",
@@ -177,6 +182,8 @@ async def _submit_code(session: str, code: str) -> tuple[str, str | None, str]:
         return "odoo_unreachable", None, ""
     if not TOTP_FIELD.search(page.text):   # landed on /web/login: that page's CSRF token would be refused
         log.warning("odoo code page: not the two-factor page: %s", _shape(page))
+        if PASSWORD_FIELD.search(page.text):   # Odoo no longer knows the session as waiting for a code
+            return "totp_expired", None, "Odoo had ended this half-finished session (sent to its login page)."
         return "totp_unsupported", None, "Odoo did not serve its two-factor page for this session."
     csrf = extract_csrf(page.text)
     if not csrf:
