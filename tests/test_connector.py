@@ -383,9 +383,57 @@ def test_expired_runs_and_wrong_links_lead_nowhere_and_are_deleted(env):
         run_dir = env / "jobs" / told["run_id"]
         connector._update(run_dir, expires=time.time() - 1)
         assert "expired" in c.get(panel["link"]).text
-        assert "expired" in c.get(panel["base"] + "state").json()["detail"]
+        assert "has ended" in c.get(panel["base"] + "state").json()["detail"]
         assert call(c, "get_icon_run", run_id=told["run_id"])[0]
         call(c, "start_icon_run")                                                   # cleans up on the way
+        assert not run_dir.exists()
+
+
+def test_a_run_lasts_while_it_is_in_use_and_is_deleted_an_hour_after(env):
+    with client() as c:
+        told, panel = start(c)
+        run_dir = env / "jobs" / told["run_id"]
+        assert told["link_expires"] == "after 1 hour unused"
+        connector._update(run_dir, expires=time.time() + 120)                    # nearly an hour unused
+        assert c.post(panel["base"] + "alive", headers={"Origin": PANEL}).status_code == 204   # the open page
+        assert connector._read(run_dir)["expires"] > time.time() + 3500          # another hour from now
+        connector._update(run_dir, expires=time.time() + 120)
+        assert not call(c, "get_icon_run", run_id=told["run_id"])[0]             # Claude following it counts too
+        assert connector._read(run_dir)["expires"] > time.time() + 3500
+        connector._update(run_dir, expires=time.time() - 1)
+        connector._cleanup()
+        assert not run_dir.exists()
+
+
+def test_leaving_a_web_page_run_deletes_its_deck_but_a_claude_run_stays(env, fake_odoo):
+    with client() as c:
+        link = sign_in(c).headers["location"]
+        page = c.get(link).text
+        assert f'home: "{WEB}"' in page                                          # the address bar shows the web page
+        deck = env / "deck.pptx"
+        make_deck(deck, ["Revenue growth of 22%", "Team expansion", "Risk management"])
+        assert run_deck(c, link + "/", deck, mode="add").status_code == 200
+        run_dir = runs(env)[0].parent
+        assert c.post(link + "/end").status_code == 204 and not run_dir.exists()   # left or refreshed: gone
+        assert c.get(link).status_code == 404 and "Start a new run" in c.get(link).text
+
+        told, panel = start(c)                                                     # Claude follows its runs
+        assert "home: null" in c.get(panel["link"]).text
+        assert c.post(panel["base"] + "end").status_code == 204 and (env / "jobs" / told["run_id"]).exists()
+
+
+def test_a_web_page_run_left_while_placing_icons_goes_once_it_is_done(env, fake_odoo):
+    with client() as c:
+        link = sign_in(c).headers["location"]
+        run_dir = runs(env)[0].parent
+        connector._update(run_dir, status="running")                              # icons still being placed
+        assert c.post(link + "/end").status_code == 204
+        assert run_dir.exists() and connector._read(run_dir)["ended"]
+        assert c.get(link + "/state").status_code == 404                           # the link is over already
+        connector._cleanup()
+        assert run_dir.exists()                                                    # not under the running deck
+        connector._update(run_dir, status="done")
+        connector._cleanup()
         assert not run_dir.exists()
 
 

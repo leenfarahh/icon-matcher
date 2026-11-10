@@ -7,7 +7,8 @@ placeholders on their slides and downloads the copy. Where Claude shows no panel
 page in the browser. Decks never pass through the chat: the page sends them straight to this server, and a deck the
 designer attached to their message is sent by Claude from its code tools (attached_deck) into the open page. Claude
 follows along with get_icon_run and can add icons from the chat with choose_icons. The original deck is never changed.
-Runs (deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Designers never sign in: the hosted connector's address
+A run (deck, copy, link) is deleted after ICON_RUN_IDLE_HOURS unused, and a web page run as soon as the designer
+leaves its page. Designers never sign in: the hosted connector's address
 carries a secret instead (auth.py). People without Claude sign in with Odoo on the web page (web.py) and start runs
 there, which open the same page at the run's private link. Hosting: connector-setup.md."""
 import hmac
@@ -106,6 +107,16 @@ def _update(run_dir: Path, **changes) -> dict:
         return _write(run_dir, {**_read(run_dir), **changes})
 
 
+IDLE_S = config.RUN_IDLE_HOURS * 3600
+IDLE = f"{config.RUN_IDLE_HOURS:g} hour{'' if config.RUN_IDLE_HOURS == 1 else 's'}"
+
+
+def _touch(run_dir: Path, run: dict) -> dict:
+    """The run is in use: it lasts another RUN_IDLE_HOURS from now. Written at most once a minute, not per icon."""
+    now = time.time()
+    return _update(run_dir, expires=now + IDLE_S) if run["expires"] < now + IDLE_S - 60 else run
+
+
 def _claim(run_dir: Path) -> bool:
     """Start running the run's deck: False while it is already running (a second click on Run)."""
     with _lock:
@@ -126,22 +137,25 @@ def _run(run_id: str) -> tuple[Path, dict]:
     """A live run. Only the conversation that started it has its id."""
     run_dir = config.WORK_DIR / run_id
     if RUN_ID.fullmatch(run_id) and (run_dir / RUN_FILE).exists():
-        run = _read(run_dir)
-        if run["expires"] > time.time():
-            return run_dir, run
-    raise ToolError(f"no run '{run_id}' (runs expire after {config.RUN_TTL_HOURS:g} hours): "
+        with _lock:
+            run = _read(run_dir)
+            if run["expires"] > time.time() and not run.get("ended"):
+                return run_dir, _touch(run_dir, run)
+    raise ToolError(f"no run '{run_id}' (a run and its files are deleted after {IDLE} unused): "
                     "start a new one with start_icon_run")
 
 
 def _cleanup():
-    """Delete runs whose time is up: their decks, copies and links go with them."""
+    """Delete runs unused for RUN_IDLE_HOURS, and runs the designer left while they were still placing icons (_end):
+    their decks, copies, slide pictures and links go with them."""
     now = time.time()
     for path in config.WORK_DIR.glob(f"*/{RUN_FILE}"):
         try:
-            expired = json.loads(path.read_text(encoding="utf-8"))["expires"] < now
+            run = json.loads(path.read_text(encoding="utf-8"))
+            gone = run["expires"] < now or (run.get("ended") and run["status"] != "running")
         except (OSError, ValueError, KeyError):
             continue
-        if expired:
+        if gone:
             shutil.rmtree(path.parent, ignore_errors=True)
 
 
@@ -149,29 +163,38 @@ _sweeping = threading.Event()
 
 
 def _sweep():
-    """Clean up every hour too, so client decks don't outstay their run on a quiet server."""
+    """Clean up every few minutes too, so client decks don't outstay their run on a quiet server."""
     while True:
         try:
             _cleanup()
         except OSError:
             log.exception("cleaning up expired runs failed")
-        time.sleep(3600)
+        time.sleep(300)
 
 
 def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None, allow_filled: bool = False) -> dict:
     """Run the deck (in a worker thread; PARALLEL_RUNS at a time, the rest wait their turn) and record how it went."""
-    with _slots:
-        try:
-            result = jobs.run(run_dir, deck_file, _library(), mode, slides, allow_filled)
-        except (ValueError, NotImplementedError) as e:
-            _update(run_dir, status="failed", error=str(e))
-            raise jobs.RunError(str(e))
-        except Exception:   # a file python-pptx can't open, or a bug: the designer gets a reason, the log the details
-            log.exception("run %s failed", run_dir.name)
-            _update(run_dir, status="failed", error=FAILED)
-            raise jobs.RunError(FAILED[0].upper() + FAILED[1:] + ".", 422)
-    _update(run_dir, status="done", copy_icons=None if mode == "suggest" else len(result["picks"]))
-    return result
+    try:
+        with _slots:
+            try:
+                result = jobs.run(run_dir, deck_file, _library(), mode, slides, allow_filled)
+            except (ValueError, NotImplementedError) as e:
+                _update(run_dir, status="failed", error=str(e))
+                raise jobs.RunError(str(e))
+            except Exception:   # a file python-pptx can't open, or a bug: the designer gets a reason, the log the details
+                log.exception("run %s failed", run_dir.name)
+                _update(run_dir, status="failed", error=FAILED)
+                raise jobs.RunError(FAILED[0].upper() + FAILED[1:] + ".", 422)
+        _update(run_dir, status="done", copy_icons=None if mode == "suggest" else len(result["picks"]))
+        return result
+    finally:
+        with _lock:   # the designer left while it ran (_end): it goes now that it's done
+            try:
+                ended = _read(run_dir).get("ended")
+            except OSError:
+                ended = False
+            if ended:
+                shutil.rmtree(run_dir, ignore_errors=True)
 
 
 def _label(text: str) -> str:
@@ -235,7 +258,7 @@ def _new_run(mode: str = "replace", slides: str = "", attached_deck: str = "", a
         "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
         "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
         if attached_deck else None,
-        "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
+        "created": now, "expires": now + IDLE_S})
 
 
 def _start_web_run(email: str) -> str:
@@ -275,7 +298,7 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
                         "first), or empty")
     run = _new_run(mode, slides, attached_deck, allow_filled)
     run_id, link = run["id"], _link(run)
-    told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires_in_hours": config.RUN_TTL_HOURS,
+    told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires": f"after {IDLE} unused",
             "next": "The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
                     "in one line to upload their deck there; don't paste the link. Only where no panel shows (the "
                     "PowerPoint add-in, Claude Code), give them the link: it opens the same page in the browser."}
@@ -390,7 +413,7 @@ APPS_CLIENT = "vendor/ext-apps-app-with-deps-1.7.5.js"   # the MCP Apps client (
 PANEL_ORIGIN = re.compile(r"https://[a-z0-9-]+\.claudemcpcontent\.com")   # where Claude runs panels
 MODES = ("replace", "add", "suggest")
 MAX_ICON_MB = 5
-EXPIRED = (f"This run has expired (runs and their files are deleted after {config.RUN_TTL_HOURS:g} hours). "
+EXPIRED = (f"This run has ended: its deck and copy are deleted when you leave its page, or after {IDLE} unused. "
            "Ask Claude to start a new one, or start one from your Prezlab Icons web page.")
 SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"   # an icon opened on its own runs nothing
 
@@ -423,19 +446,23 @@ def panel_html(origin: str = "") -> str:
 
 
 def _gone() -> HTMLResponse:
-    return pages.render(f"<h1>This link has expired</h1><p>{EXPIRED}</p>", 404)
+    home = f'<a class="button" href="{web.PATH}">Start a new run</a>' if web.enabled() else ""
+    return pages.render(f"<h1>This link has expired</h1><p>{EXPIRED}</p>{home}", 404)
 
 
 def _link_run(request: Request) -> tuple[Path, dict] | None:
-    """The run behind a private link, while the link is valid."""
+    """The run behind a private link, while the link is valid. Every request through it keeps the run in use."""
     run_id, token = request.path_params["run_id"], request.path_params["token"]
     run_dir = config.WORK_DIR / run_id
-    if not RUN_ID.fullmatch(run_id) or not (run_dir / RUN_FILE).exists():
-        return None
-    run = _read(run_dir)
-    if not hmac.compare_digest(run["token"].encode(), token.encode()) or run["expires"] < time.time():
-        return None
-    return run_dir, run
+    with _lock:
+        try:
+            run = _read(run_dir) if RUN_ID.fullmatch(run_id) else None
+        except OSError:   # no such run, or deleted just now
+            return None
+        if (run is None or not hmac.compare_digest(run["token"].encode(), token.encode())
+                or run["expires"] < time.time() or run.get("ended")):
+            return None
+        return run_dir, _touch(run_dir, run)
 
 
 async def run_page(request: Request) -> Response:
@@ -445,7 +472,11 @@ async def run_page(request: Request) -> Response:
         return _gone()
     run = found[1]
     base, source = json.dumps(f"/runs/{run['id']}/{run['token']}/"), json.dumps(run.get("source", "claude"))
-    host = f'<script>window.HOST = {{mode: "page", base: {base}, source: {source}, ready: Promise.resolve()}};</script>'
+    # A web page run belongs to its page: the address bar shows the web page, so a refresh goes back there, and
+    # leaving ends the run (_end). A link from Claude stays the run's address: Claude follows that run.
+    home = json.dumps(web.PATH if run.get("source") == "web" and web.enabled() else None)
+    host = (f'<script>window.HOST = {{mode: "page", base: {base}, source: {source}, home: {home}, '
+            'ready: Promise.resolve()};</script>')
     return HTMLResponse(_page(host), headers=pages.PRIVATE)
 
 
@@ -526,9 +557,6 @@ async def _check_deck(deck) -> None:
 def _save_deck(deck: UploadFile, path: Path):
     with path.open("wb") as f:
         shutil.copyfileobj(deck.file, f)
-    if path.stat().st_size > config.MAX_DECK_MB * 2**20:
-        raise jobs.RunError(f"This deck is over {config.MAX_DECK_MB} MB. Compress its pictures in PowerPoint "
-                            "(File > Compress Pictures) and try again.", 413)
 
 
 async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
@@ -631,6 +659,24 @@ async def _slide(request: Request, run_dir: Path, run: dict) -> Response:
     return FileResponse(path, media_type="image/png")
 
 
+async def _alive(request: Request, run_dir: Path, run: dict) -> Response:
+    """The page is still open (it says so every few minutes): _link_run has kept the run in use."""
+    return Response(status_code=204)
+
+
+async def _end(request: Request, run_dir: Path, run: dict) -> Response:
+    """The designer left a web page run (closed it, refreshed, went elsewhere): its deck, copy and slide pictures are
+    deleted now, or once it's done if it's still placing icons. Runs Claude started stay until they've been unused for
+    RUN_IDLE_HOURS: Claude follows those, and their link may be opened again."""
+    if run.get("source") == "web":
+        with _lock:
+            if _read(run_dir)["status"] == "running":
+                _update(run_dir, ended=True)
+            else:
+                shutil.rmtree(run_dir, ignore_errors=True)
+    return Response(status_code=204)
+
+
 async def _download(request: Request, run_dir: Path, run: dict) -> Response:
     out = jobs.output(run_dir)
     if out is None:
@@ -639,7 +685,7 @@ async def _download(request: Request, run_dir: Path, run: dict) -> Response:
 
 
 RUN_LINK = "/runs/{run_id}/{token}"
-API = [("/state", ["GET"], _state), ("/library", ["GET"], _library_index), ("/icons/{icon_id}.svg", ["GET"], _icon),
+API = [("/state", ["GET"], _state), ("/alive", ["POST"], _alive), ("/end", ["POST"], _end), ("/library", ["GET"], _library_index), ("/icons/{icon_id}.svg", ["GET"], _icon),
        ("/deck", ["POST"], _attach), ("/jobs", ["POST"], _run_deck), ("/jobs/{job}/apply", ["POST"], _apply),
        ("/jobs/{job}/uploads", ["POST"], _upload_icon), ("/jobs/{job}/uploads/{digest}.svg", ["GET"], _uploaded_icon),
        ("/jobs/{job}/slides/{n:int}.png", ["GET"], _slide), ("/jobs/{job}/download", ["GET"], _download)]

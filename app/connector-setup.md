@@ -52,7 +52,7 @@ the Blueprint as above, then add the connector again in claude.ai with its addre
 for code execution (step 2), and delete the old service (runs last a day, so nothing is lost). The first build takes
 5 to 10 minutes (it installs LibreOffice); later ones reuse it.
 
-Optional settings (`.env.example` lists them all): `ICON_RUN_TTL_HOURS` (24), `ICON_MAX_DECK_MB` (150),
+Optional settings (`.env.example` lists them all): `ICON_RUN_IDLE_HOURS` (1),
 `ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
 `ICON_MIN_FIT` (3: how sure Claude must be to place an icon), `ICON_ENHANCE` (1: read each card before picking).
 
@@ -124,8 +124,9 @@ sign-in turns the page on at its next deploy. `ODOO_TD_ENCRYPTION_KEY` isn't use
 1. Open the address and sign in with your Odoo login and password. With two-factor on, enter the code from your
    authenticator app; that browser isn't asked for one again for 30 days. You stay signed in for 30 days.
 2. Click **Start with a deck** (right after signing in, a run opens by itself). A private page opens for that deck,
-   the same one Claude's panel shows; it lasts 24 hours, and you can run the deck again there after changes.
-   Bookmark the web page, not the private one.
+   the same one Claude's panel shows, and you can run the deck again there after changes. The address bar keeps
+   showing the web page, so a refresh comes back to it. Leaving or refreshing deletes the deck and its copy, so
+   download the copy first.
 3. In PowerPoint, save the deck first, then upload it, check the mode, **Run**, review, **Choose flagged icons**,
    **Add chosen**, **Download deck**.
 
@@ -165,8 +166,10 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
   over HTTPS. The deck's contents never go through the chat.
 - **Library.** The panel's Library tab reads the library; adding and editing icons stays in the local tool, since
   changes on Render would be lost at the next deploy.
-- **Retention.** The uploaded deck, its copy and the link are deleted after `ICON_RUN_TTL_HOURS` (24 hours by
-  default; checked hourly). They sit on the Render disk in Frankfurt until then. Confirm that region with whoever
+- **Retention.** Nothing is kept in a database. A run's deck, its copy, its slide pictures and the link live on the
+  Render disk in Frankfurt only while the run is in use: a run from the web page is deleted as soon as the designer
+  leaves or refreshes its page, and any run (Claude's too) after `ICON_RUN_IDLE_HOURS` unused (1 hour by default,
+  checked every 5 minutes; an open page keeps its run in use). Decks have no size cap. Confirm that region with whoever
   owns Prezlab's data policy before client decks go through it.
 - **Claude API.** With `ANTHROPIC_API_KEY` set, the slide text that needs icons goes to the Claude API to pick them,
   as it does in the local tool.

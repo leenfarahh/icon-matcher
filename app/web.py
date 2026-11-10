@@ -229,9 +229,9 @@ def _start_page(user: dict) -> Response:
         f"<h1>Place icons in a deck</h1><p>Signed in as {html.escape(user['name'])}.</p>"
         '<form method="post"><input type="hidden" name="start" value="1">'
         '<button data-busy="Opening…">Start with a deck</button></form>'
-        f"<p><small>Each start opens a private page for one deck, kept for {config.RUN_TTL_HOURS:g} hours, where you "
-        "can run it again with changes. Bookmark this page, not that one. In PowerPoint, save the deck before you "
-        "upload it.</small></p>"
+        "<p><small>Each start opens a private page for your deck, where you can run it again with changes. The deck "
+        "and its copy are deleted as soon as you leave or refresh that page, so download the copy first. In "
+        "PowerPoint, save the deck before you upload it.</small></p>"
         f'<form method="post" class="quiet"><input type="hidden" name="signout" value="1"><p><small>Not '
         f'{html.escape(user["email"])}? <button class="link">Sign out</button></small></p></form>')
 

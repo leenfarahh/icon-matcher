@@ -27,7 +27,7 @@ never pass through the chat: a deck attached to the message is sent by Claude fr
 (`start_icon_run`'s `attached_deck`), and the open panel picks it up. `get_icon_run` reports the picks and flags,
 `choose_icons` writes a fresh copy from the chat, and `search_icons` looks up the library. Designers don't sign in:
 the hosted connector's address carries a secret (`/mcp/<ICON_MCP_SECRET>`, `app/auth.py`), so it runs on Render's own
-address with no domain. A run's deck, copy and link are deleted after 24 hours. Saved runs and the apply step are shared with the
+address with no domain. A run's deck, copy and link are deleted an hour after last use, and a web page run as soon as its page is left. Saved runs and the apply step are shared with the
 test UI (`app/jobs.py`). Hosting on Render (`render.yaml`) and adding the connector in
 Claude: `app/connector-setup.md`.
 

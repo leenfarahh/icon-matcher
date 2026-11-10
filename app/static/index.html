@@ -336,7 +336,17 @@ const notifyDone = (() => {
     if (url && unseen) link.setAttribute("href", url);   // unless the designer came back while it was drawn
   };
 })();
-const img = (id, px) => `<img class="ic" src="${U(`icons/${encodeURIComponent(id)}.svg`)}" width="${px}" height="${px}" alt="${esc(id)}">`;
+// Hosted runs last while they're in use (the server deletes a deck after an hour unused), so an open page says it's
+// still open every few minutes. A web page run belongs to its page (HOST.home): the address bar shows the web page,
+// so a refresh goes back there, and leaving the page (closing, refreshing, going elsewhere) deletes the deck and copy.
+if (HOST) HOST.ready.then(() => setInterval(() => fetch(U("alive"), {method: "POST"}).catch(() => {}), 5 * 60e3));
+if (HOST && HOST.home) {
+  history.replaceState(null, "", HOST.home);
+  addEventListener("pagehide", () => navigator.sendBeacon(U("end")));
+  addEventListener("pageshow", e => { if (e.persisted) location.replace(HOST.home); });   // back to a kept page
+}
+// Lazy: the Library tab holds every icon, and a hidden tab's icons would otherwise all load with the page.
+const img = (id, px) => `<img class="ic" src="${U(`icons/${encodeURIComponent(id)}.svg`)}" width="${px}" height="${px}" alt="${esc(id)}" loading="lazy" decoding="async">`;
 const chips = (list, cls = "") => (list || []).map(t => `<span class="chip ${cls}">${esc(t)}</span>`).join("");
 let lib = {icons: [], concept_map: {}};
 
@@ -359,7 +369,7 @@ async function loadLibrary() {
   } catch (e) {
     $("#status").classList.remove("counts");   // a problem shows on every tab
     $("#status").textContent = !HOST ? "Library not reachable: is the server running?"
-      : e.message === "gone" ? "This run has expired (runs last 24 hours). " + (HOST.source === "web"
+      : e.message === "gone" ? "This run has ended (a deck is deleted after an hour unused). " + (HOST.source === "web"
         ? "Open your Prezlab Icons web page again to start a new one." : "Ask Claude to start a new one.")
       : "Prezlab Icons isn't reachable right now. Try again in a moment.";
     $("#run button").disabled = !!HOST;
@@ -974,7 +984,7 @@ async function apply(r, indices, choices, msg, sync) {
           body.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></div>` : "";
     msg.innerHTML = `<div class="ok apply-ok"><span><b>Added ${body.added} icon${body.added === 1 ? "" : "s"}</b>
         to ${esc(body.output_file)}. The copy holds exactly these icons.</span>
-        <a href="${esc(U(body.download))}"><button class="primary" type="button">Download deck</button></a>${skipped}</div>${reused}`;
+        <a href="${esc(U(body.download))}" download><button class="primary" type="button">Download deck</button></a>${skipped}</div>${reused}`;
     if (HOST) {
       HOST.output = body.output_file;
       if (HOST.applied) HOST.applied(body);

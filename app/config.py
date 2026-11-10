@@ -30,8 +30,9 @@ MCP_TOKEN = os.getenv("ICON_MCP_TOKEN", "")     # token mode: the one shared bea
 ODOO_URL = os.getenv("ODOO_URL", "").rstrip("/")
 ODOO_DB = os.getenv("ODOO_DB", "")
 ODOO_ALLOWED_EMAIL_DOMAIN = os.getenv("ODOO_ALLOWED_EMAIL_DOMAIN", "prezlab.com").strip().lower()   # "" = any
-RUN_TTL_HOURS = float(os.getenv("ICON_RUN_TTL_HOURS", "24"))   # a run's deck, copy and links are deleted after this
-MAX_DECK_MB = int(os.getenv("ICON_MAX_DECK_MB", "150"))
+# A run's deck, copy and link are deleted after this long unused (an open page keeps its run in use), and a run from
+# the web page as soon as the designer leaves its page. Decks have no size cap.
+RUN_IDLE_HOURS = float(os.getenv("ICON_RUN_IDLE_HOURS", "1"))
 PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed at the same time; the rest queue
 
 # Fallback size tiers (inches on a 13.33in-wide slide). The library's style guide
