@@ -31,6 +31,11 @@ address with no domain. A run's deck, copy and link are deleted after 24 hours. 
 test UI (`app/jobs.py`). Hosting on Render (`render.yaml`) and adding the connector in
 Claude: `app/connector-setup.md`.
 
+People without Claude use the same service's web page (`app/web.py`, at `/web`), signing in with their Odoo login as
+in Image Studio (`app/odoo.py`, two-factor included). Its button starts a run and opens that run's private page, the
+same page as Claude's panel. Off unless `ODOO_URL` and `ODOO_DB` are set (`app/connector-setup.md`, "Web page for
+people without Claude"). The Claude connector itself still has no sign-in.
+
 ## PL logo placeholders (app/placeholders.py)
 
 Designers drop the PL logo (as vector shapes, copied from the template) where an icon should go. The tool

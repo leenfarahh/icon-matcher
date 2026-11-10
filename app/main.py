@@ -21,6 +21,15 @@ def ui():
     return FileResponse(STATIC / "index.html")
 
 
+@app.get("/fonts/{name}")
+def font(name: str):
+    """The brand font the page loads (static/fonts)."""
+    path = STATIC / "fonts" / name
+    if not (re.fullmatch(r"[\w-]+\.woff2", name) and path.is_file()):
+        raise HTTPException(404, "no such font")
+    return FileResponse(path, media_type="font/woff2")
+
+
 @app.get("/health")
 def health():
     return {"library": str(library.root), "found": library.root.exists(),

@@ -40,8 +40,9 @@ runs in progress are lost. On Starter (512 MB), slide pictures of large decks ca
 The service refuses to start without `ICON_MCP_SECRET` (it would be open to anyone); Render then keeps the previous
 version running. Its address comes from Render (`RENDER_EXTERNAL_URL`). Set `ICON_PUBLIC_URL` only to use another one.
 
-**Moving a service that used Odoo sign-in:** in Render, **Environment**, add `ICON_MCP_SECRET` and delete `ODOO_URL`,
-`ODOO_DB`, `ODOO_ALLOWED_EMAIL_DOMAIN` and `ODOO_TD_ENCRYPTION_KEY`; save and deploy. The old sign-ins file
+**Moving a service that used Odoo sign-in for the connector:** in Render, **Environment**, add `ICON_MCP_SECRET` and
+delete `ODOO_TD_ENCRYPTION_KEY`; keep `ODOO_URL`, `ODOO_DB` and `ODOO_ALLOWED_EMAIL_DOMAIN` for the web page (see
+"Web page for people without Claude"), or delete them too to keep it off. Save and deploy. The old sign-ins file
 (`/var/data/runs/auth.sqlite3`) is no longer read and can be deleted from the service's **Shell**. Then do step 2 with
 the new address.
 
@@ -97,6 +98,44 @@ says the deck didn't come through, and designers choose it in the panel instead.
 5. **No panel?** Where Claude shows none (Claude Code, possibly the PowerPoint add-in), Claude gives a link instead:
    it opens the same page in the browser.
 
+## Web page for people without Claude
+
+The same service also serves Prezlab Icons as a plain web page, for colleagues who don't have Claude. They sign in
+with their Odoo login, as in Image Studio. It is the same page as Claude's panel, so it works the same way: upload
+the deck, **Run**, review, choose flagged icons, download. It needs no new service, only the Odoo settings. The Claude
+connector is unchanged: no sign-in, reached through its secret address.
+
+**Turn it on (tool owner).** In Render, open the existing service, **Environment**, and add the same values as Image
+Studio's service:
+
+| Setting | Value |
+| --- | --- |
+| `ODOO_URL` | e.g. `https://prezlab.odoo.com`, no trailing slash |
+| `ODOO_DB` | The Odoo database name |
+| `ODOO_ALLOWED_EMAIL_DOMAIN` | `prezlab.com` (the default), or empty to allow any |
+
+Save; Render redeploys. The page is then at `https://<service>.onrender.com` (which leads to `/web`); share that
+address with the team. The service refuses to start if only one of `ODOO_URL` and `ODOO_DB` is set or `ODOO_URL`
+isn't https; Render then keeps the previous version running. A service that still has these from the old Odoo
+sign-in turns the page on at its next deploy. `ODOO_TD_ENCRYPTION_KEY` isn't used.
+
+**Use it (each person).**
+
+1. Open the address and sign in with your Odoo login and password. With two-factor on, enter the code from your
+   authenticator app; that browser isn't asked for one again for 30 days. You stay signed in for 30 days.
+2. Click **Start with a deck** (right after signing in, a run opens by itself). A private page opens for that deck,
+   the same one Claude's panel shows; it lasts 24 hours, and you can run the deck again there after changes.
+   Bookmark the web page, not the private one.
+3. In PowerPoint, save the deck first, then upload it, check the mode, **Run**, review, **Choose flagged icons**,
+   **Add chosen**, **Download deck**.
+
+**Access.** Only active internal Odoo users with an email on `ODOO_ALLOWED_EMAIL_DOMAIN` get in; portal accounts
+(clients) and archived accounts are refused. Opening the address (or a Teams or Outlook link preview) never starts a
+run; only the button does. Sign-in attempts are limited to 20 per address and 6 per login every 5 minutes. Someone
+archived in Odoo can't sign in again, but a browser already signed in keeps working until its 30 days are up; to sign
+everyone out at once, delete `/var/data/runs/web.key` from the service's **Shell**. To turn the page off, delete
+`ODOO_URL` and `ODOO_DB`.
+
 ## Try it locally
 
     uvicorn app.connector:app --port 8001
@@ -113,10 +152,15 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
   password: keep it in claude.ai's connector settings and Render, never in chats, documents or tickets. If it leaks,
   set a new `ICON_MCP_SECRET` in Render and update the connector's URL in claude.ai.
 - **Runs.** Without sign-in a run isn't tied to a designer; it is reached through its id and its private link, which
-  only the conversation that started it has. The page and everything it reaches (the deck upload, the results, the
+  only the conversation (or the web page's browser) that started it has. The page and everything it reaches (the deck upload, the results, the
   download) sit behind that link, so it shouldn't be pasted anywhere shared. The panel calls that link straight from
   the designer's browser; the connector answers only Claude's panel origin (`*.claudemcpcontent.com`) and its own
   pages, and the panel may reach no other server (its declared CSP).
+- **Web page.** At `/web`, behind Odoo sign-in (`app/odoo.py`, ported from Image Studio). The password goes to Odoo
+  only and is never stored or logged. There is no sign-in database: the browser keeps HTTP-only cookies for `/web`,
+  sealed with AES-256-GCM under a key only the server holds (`web.key` on the disk), for who signed in, a two-factor
+  step in progress (15 minutes) and the trusted-device key Odoo gives a browser after a code (it skips the code only,
+  never the password). Runs started there are the same private runs as Claude's, with the same retention.
 - **Attached decks.** Claude sends the attachment from its code execution sandbox straight to the run's private link
   over HTTPS. The deck's contents never go through the chat.
 - **Library.** The panel's Library tab reads the library; adding and editing icons stays in the local tool, since
@@ -126,7 +170,8 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
   owns Prezlab's data policy before client decks go through it.
 - **Claude API.** With `ANTHROPIC_API_KEY` set, the slide text that needs icons goes to the Claude API to pick them,
   as it does in the local tool.
-- **Logs.** Access logs are off, because the connector's address and the run links carry secrets in the path.
+- **Logs.** Access logs are off, because the connector's address and the run links carry secrets in the path. The
+  web page logs each sign-in and each run it starts with the person's email.
 - **Test UI.** `app.main` (the local test UI) has no protection at all and is never deployed: keep it on 127.0.0.1.
 
 ## Limits

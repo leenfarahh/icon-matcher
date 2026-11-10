@@ -1,37 +1,67 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-tab="run">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Icon Placer Test</title>
+<title>Icon Placer · test console</title>
 <style>
+  /* Prezlab Brand Kit v1.0, as Image Studio applies it (static/brand/README.md): the corporate palette only, Figtree
+     for all UI text, and Orange only to mark what needs attention. Dark Teal anchors (the header, primary actions),
+     Light Teal marks what's selected, Off-White is the ground, Slate carries secondary text and lines. */
+  @font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin.woff2") format("woff2"); font-weight: 300 900;
+    font-display: swap; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+  @font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin-ext.woff2") format("woff2"); font-weight: 300 900;
+    font-display: swap; unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+    U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
   :root {
-    --bg: #f6f7f9; --panel: #fff; --ink: #1b1f24; --muted: #5f6b7a; --line: #e3e7ec;
-    --accent: #2f5bd3; --accent-soft: #e9effc; --warn: #a3470f; --warn-soft: #fdf1e8; --ok-soft: #eaf6ee;
+    --teal: #002528; --teal-700: #0a3336; --slate: #62848c; --mint: #b6edf3; --sand: #e3d8cc; --shell: #f4f6f6;
+    --alert: #ff7c4a;
+    --bg: var(--shell); --panel: #fff; --ink: var(--teal); --muted: var(--slate); --line: rgba(98, 132, 140, .24);
+    --accent: var(--teal); --accent-soft: rgba(182, 237, 243, .55); --warn: var(--teal);
+    --warn-soft: rgba(255, 124, 74, .14); --ok-soft: rgba(182, 237, 243, .4);
+    --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
-  header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
-  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
-  #status { color: var(--muted); font-size: 13px; }
-  nav { display: flex; gap: 4px; margin-left: auto; }
-  nav button { border: 0; background: none; padding: 7px 14px; border-radius: 6px; font: inherit; color: var(--muted); cursor: pointer; }
-  nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 500 14px/1.4 var(--font); letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased; }
+  h1, h2 { letter-spacing: -0.03em; }
+  ::selection { background: var(--mint); color: var(--teal); }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  header { background: var(--teal); color: var(--shell); padding: 14px 24px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 700; display: flex; align-items: center; gap: 12px; line-height: 1; }
+  header h1 .wordmark { display: block; height: 19px; width: 83px; flex: none; color: var(--shell); }
+  header h1 .product { padding-left: 12px; border-left: 1px solid rgba(182, 237, 243, .4); font-weight: 600; letter-spacing: -0.02em; }
+  #status { color: rgba(182, 237, 243, .82); font-size: 13px; }
+  :root:not([data-tab="library"]) #status.counts { display: none; }   /* library counts on the Library tab only */
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { border: 0; background: none; padding: 7px 16px; border-radius: 999px; font: inherit; color: rgba(244, 246, 246, .8); cursor: pointer; }
+  nav button:hover { color: var(--shell); background: rgba(182, 237, 243, .12); }
+  nav button.on { background: var(--mint); color: var(--teal); font-weight: 600; }
+  header :focus-visible { outline-color: var(--mint); }
   main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px; margin-bottom: 16px; }
   .row { display: flex; gap: 14px; align-items: end; flex-wrap: wrap; }
   label.tick { display: flex; align-items: center; gap: 6px; padding-bottom: 8px; }
   label.tick input { margin: 0; }
   label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
-  input, select { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); }
+  input, select { font: inherit; letter-spacing: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); }
+  input:focus, select:focus, textarea:focus { border-color: var(--teal); }
+  input::placeholder, textarea::placeholder { color: var(--slate); opacity: .8; }
   input[type=file] { padding: 5px; }
-  button.primary { font: inherit; font-weight: 600; background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 18px; cursor: pointer; }
-  button.primary:disabled { opacity: .5; cursor: wait; }
+  input[type=file]::file-selector-button { font: inherit; font-weight: 600; letter-spacing: -0.01em; margin-right: 10px;
+    padding: 5px 14px; border: 1px solid rgba(98, 132, 140, .45); border-radius: 999px; background: var(--shell);
+    color: var(--teal); cursor: pointer; }
+  input[type=file]::file-selector-button:hover { border-color: var(--teal); }
+  input[type=checkbox], input[type=radio] { accent-color: var(--teal); }
+  button.primary { font: inherit; font-weight: 600; letter-spacing: -0.02em; background: var(--teal); color: var(--shell); border: 0; border-radius: 999px; padding: 9px 22px; cursor: pointer; }
+  button.primary:hover:not(:disabled) { background: var(--teal-700); }
+  button.primary:disabled { opacity: .45; cursor: wait; }
   .note { color: var(--muted); font-size: 12px; margin: 10px 0 0; }
-  .err { background: var(--warn-soft); color: var(--warn); border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; }
+  .err { background: var(--warn-soft); color: var(--ink); border-left: 3px solid var(--alert); border-radius: 10px; padding: 10px 14px; white-space: pre-wrap; }
   .summary { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
   .summary b { font-size: 15px; }
-  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; border: 1px solid var(--line); }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; border: 1px solid var(--line); }
   a.dl { text-decoration: none; }
   .summary-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   table { width: 100%; border-collapse: collapse; }
@@ -40,11 +70,11 @@
   tr:last-child td { border-bottom: 0; }
   h2 { font-size: 14px; margin: 0 0 10px; }
   details.fold { padding: 0; }
-  details.fold > summary { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-radius: 10px; cursor: pointer; list-style: none; }
+  details.fold > summary { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-radius: 16px; cursor: pointer; list-style: none; }
   details.fold > summary::-webkit-details-marker { display: none; }
   details.fold > summary::before { content: ""; flex: none; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
   details.fold[open] > summary::before { transform: rotate(45deg); }
-  details.fold > summary:hover { background: #fafbfc; }
+  details.fold > summary:hover { background: var(--shell); }
   details.fold > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   details.fold > summary h2 { margin: 0; }
   details.fold > summary .count { color: var(--muted); font-size: 13px; }
@@ -55,73 +85,74 @@
   .alts { display: flex; gap: 10px; flex-wrap: wrap; }
   .alt { display: grid; justify-items: center; gap: 2px; font-size: 11px; color: var(--muted); }
   .mono { font-family: Consolas, monospace; font-size: 12px; }
-  .chip { display: inline-block; padding: 1px 7px; border-radius: 10px; background: #f0f2f5; font-size: 12px; margin: 0 4px 4px 0; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--shell); font-size: 12px; margin: 0 4px 4px 0; }
   .chip.house { background: var(--accent-soft); color: var(--accent); }
   .chip.avoid { background: var(--warn-soft); color: var(--warn); }
-  .badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #f0f2f5; color: var(--muted); white-space: nowrap; display: inline-block; margin-bottom: 4px; }
+  .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: var(--shell); color: var(--muted); white-space: nowrap; display: inline-block; margin-bottom: 4px; }
   .badge.weak { background: var(--warn-soft); color: var(--warn); }
-  .badge.rtl { background: var(--ok-soft); color: #1d6b3a; }
+  .badge.rtl { background: var(--ok-soft); color: var(--ink); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
   .card .top { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
   .card .id { font-weight: 600; }
-  .ar { direction: rtl; text-align: right; font-size: 13px; color: var(--muted); }
+  .ar { direction: rtl; text-align: right; font-size: 13px; color: var(--muted); font-family: "Dubai", var(--font); letter-spacing: 0; }
   .lbl { font-size: 11px; color: var(--muted); font-weight: 600; margin: 6px 0 2px; }
-  .banner { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  button.secondary { font: inherit; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 16px; cursor: pointer; }
+  .banner { background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button.secondary { font: inherit; letter-spacing: inherit; background: #fff; color: var(--ink); border: 1px solid rgba(98, 132, 140, .45); border-radius: 999px; padding: 8px 18px; cursor: pointer; }
+  button.secondary:hover:not(:disabled) { border-color: var(--teal); background: var(--shell); }
   .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin: 12px 0 16px; }
   .form-grid .wide { grid-column: 1 / -1; }
   .form-grid label { align-content: start; }
-  textarea { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; min-height: 54px; resize: vertical; }
+  textarea { font: inherit; letter-spacing: inherit; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; min-height: 54px; resize: vertical; }
   label small { font-weight: 400; color: var(--muted); }
-  label small.warn { color: var(--warn); }
+  label small.warn { color: var(--ink); font-weight: 600; }
   .opts { display: flex; gap: 16px; align-items: center; font-size: 14px; color: var(--ink); font-weight: 400; padding-top: 4px; }
   .opts input { margin-right: 4px; }
-  .preview { display: flex; gap: 18px; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 8px; min-height: 104px; color: var(--muted); font-size: 12px; }
+  .preview { display: flex; gap: 18px; align-items: center; justify-content: center; border: 1px dashed rgba(98, 132, 140, .45); border-radius: 12px; min-height: 104px; color: var(--muted); font-size: 12px; }
   .preview figure { margin: 0; display: grid; justify-items: center; gap: 4px; }
   .preview figcaption { font-size: 11px; color: var(--muted); }
-  .hint { background: var(--warn-soft); color: var(--ink); border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+  .hint { background: var(--warn-soft); color: var(--ink); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
   #file-msg:empty { display: none; }
   #file-msg { display: grid; gap: 8px; }
-  .ok { background: var(--ok-soft); color: #1d6b3a; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
+  .ok { background: var(--ok-soft); color: var(--ink); border-left: 3px solid var(--mint); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
   .ok ul, .err ul { margin: 6px 0 0; padding-left: 18px; }
   button.small { padding: 3px 10px; font-size: 12px; margin-left: auto; align-self: start; }
-  .apply-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  .apply-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--accent-soft); border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
   .apply-bar .note { flex: 1; min-width: 240px; }
   #apply-msg:not(:empty), #choose-msg:not(:empty) { margin-bottom: 12px; }
   /* review: flagged PL placeholders on their slides */
-  :root { --mark: #ff2d87; --done: #1d8a4a; }
+  :root { --mark: var(--alert); --done: var(--slate); }
   .review { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
   @media (max-width: 900px) { .review { grid-template-columns: 1fr; } }
   .slide-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .slide-tabs button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .slide-tabs button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
   .slide-tabs button.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .slide-tabs .count { margin-left: 6px; color: var(--muted); font-weight: 400; }
   .slide-tabs .complete .count { color: var(--done); font-weight: 600; }
-  .slide { position: relative; width: 100%; background: #eef0f3; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .slide { position: relative; width: 100%; background: var(--shell); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
   .slide .shot, .slide .marks { position: absolute; inset: 0; width: 100%; height: 100%; }
   .slide-msg { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-  .ph { position: absolute; padding: 0; border: 3px solid var(--mark); border-radius: 6px; background: rgba(255, 45, 135, .14); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
-  .ph .num { position: absolute; top: -12px; left: -12px; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: var(--mark); color: #fff; font-size: 12px; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
-  .ph.chosen { border-color: var(--accent); background: transparent; } .ph.chosen .num { background: var(--accent); }
-  .ph.done { border-color: var(--done); background: transparent; } .ph.done .num { background: var(--done); }
+  .ph { position: absolute; padding: 0; border: 3px solid var(--mark); border-radius: 6px; background: rgba(255, 124, 74, .16); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
+  .ph .num { position: absolute; top: -12px; left: -12px; min-width: 22px; height: 22px; border-radius: 11px; display: grid; place-items: center; background: var(--mark); color: var(--teal); font-size: 12px; font-weight: 700; box-shadow: 0 0 0 2px #fff; }
+  .ph.chosen { border-color: var(--accent); background: transparent; } .ph.chosen .num { background: var(--accent); color: var(--shell); }
+  .ph.done { border-color: var(--done); background: transparent; } .ph.done .num { background: var(--done); color: #fff; }
   .ph.on { border-width: 4px; animation: pulse 1.2s ease-in-out infinite; }
   .ph:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
-  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255, 45, 135, .35); } }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgba(255, 124, 74, .4); } }
   @media (prefers-reduced-motion: reduce) { .ph.on { animation: none; } }
   .ph-preview { position: absolute; border-radius: 4px; pointer-events: none; }
   .ph-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .chooser { border: 1px solid var(--line); border-radius: 8px; padding: 14px; position: sticky; top: 12px; }
-  .chooser .label-text { font-size: 16px; font-weight: 600; margin: 2px 0 4px; }
+  .chooser { border: 1px solid var(--line); border-radius: 14px; padding: 14px; position: sticky; top: 12px; }
+  .chooser .label-text { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0 4px; }
   .chooser input { width: 100%; box-sizing: border-box; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
-  .tile { font: inherit; font-size: 11px; display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
+  .tile { font: inherit; font-size: 11px; display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--muted); cursor: pointer; overflow-wrap: anywhere; }
   .tile:hover { border-color: var(--accent); }
   .tile.on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
-  .tile .used { font-size: 10px; color: var(--warn); font-weight: 600; }
+  .tile .used { font-size: 10px; color: var(--ink); font-weight: 600; background: var(--warn-soft); border-radius: 999px; padding: 0 6px; }
   .chooser-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .upload { position: relative; display: inline-flex; width: fit-content; margin-top: 2px; padding: 7px 16px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 400; cursor: pointer; }
-  .upload:hover { border-color: var(--accent); }
+  .upload { position: relative; display: inline-flex; width: fit-content; margin-top: 2px; padding: 8px 18px; border: 1px solid rgba(98, 132, 140, .45); border-radius: 999px; background: #fff; color: var(--ink); font-size: 13px; font-weight: 500; cursor: pointer; }
+  .upload:hover { border-color: var(--teal); background: var(--shell); }
   .upload:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .upload input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .apply-ok { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
@@ -135,7 +166,7 @@
   /* the deck the designer attached in the chat, in place of choosing a file (hosted only) */
   .attached { display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
   .attached .deck { display: flex; gap: 8px; align-items: center; }
-  .attached .name { display: grid; padding: 4px 10px; border-radius: 6px; background: var(--ok-soft); color: var(--ink); font-size: 14px; font-weight: 400; max-width: 320px; }
+  .attached .name { display: grid; padding: 4px 12px; border-radius: 10px; background: var(--ok-soft); color: var(--ink); font-size: 14px; font-weight: 400; max-width: 320px; }
   .attached .name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .attached .name small { font-size: 11px; color: var(--muted); }
   .attached .upload { margin-top: 0; }
@@ -145,8 +176,8 @@
 </head>
 <body>
 <header>
-  <h1>Icon Placer · test console</h1>
-  <span id="status">Loading library…</span>
+  <h1><svg class="wordmark" viewBox="0 0 923.74 212.24" role="img" aria-label="Prezlab"><path fill="currentColor" d="M899.32 169.23C895.06 169.23 891.08 168.12 887.38 165.9C883.68 163.68 880.72 160.72 878.5 157.02C876.28 153.32 875.17 149.34 875.17 145.08C875.17 140.64 876.28 136.62 878.5 133.01C880.72 129.4 883.68 126.49 887.38 124.27C891.08 122.05 895.06 120.94 899.32 120.94C903.94 120.94 908.06 122.05 911.67 124.27C915.28 126.49 918.19 129.4 920.41 133.01C922.63 136.62 923.74 140.64 923.74 145.08C923.74 149.34 922.63 153.32 920.41 157.02C918.19 160.72 915.28 163.68 911.67 165.9C908.06 168.12 903.94 169.23 899.32 169.23ZM899.32 91.48C895.06 91.48 891.08 90.37 887.38 88.15C883.68 85.93 880.72 82.97 878.5 79.27C876.28 75.57 875.17 71.59 875.17 67.33C875.17 62.89 876.28 58.87 878.5 55.26C880.72 51.65 883.68 48.74 887.38 46.52C891.08 44.3 895.06 43.19 899.32 43.19C903.94 43.19 908.06 44.3 911.67 46.52C915.28 48.74 918.19 51.65 920.41 55.26C922.63 58.87 923.74 62.89 923.74 67.33C923.74 71.59 922.63 75.57 920.41 79.27C918.19 82.97 915.28 85.93 911.67 88.15C908.06 90.37 903.94 91.48 899.32 91.48ZM94.5 85.8C91.37 80.23 87.25 75.99 82.13 73.08C77.01 70.18 71.48 68.73 65.52 68.73C59.72 68.73 54.26 70.22 49.14 73.2C44.02 76.18 39.9 80.49 36.77 86.14C33.64 91.79 32.07 98.44 32.07 106.07C32.07 113.71 33.64 120.36 36.77 126.01C39.9 131.66 44.02 135.97 49.14 138.95C54.26 141.93 59.72 143.42 65.52 143.42C71.48 143.42 77.01 141.89 82.13 138.84C87.25 135.78 91.37 131.43 94.5 125.78C97.63 120.13 99.2 113.4 99.2 105.62C99.2 97.98 97.63 91.38 94.5 85.8ZM49.14 46.39C56.4 42.5 64.68 40.55 74 40.55C84.84 40.55 94.65 43.23 103.44 48.57C112.22 53.92 119.17 61.51 124.29 71.37C129.4 81.22 131.96 92.64 131.96 105.62C131.96 118.6 129.4 130.09 124.29 140.1C119.17 150.1 112.22 157.85 103.44 163.35C94.65 168.85 84.84 171.6 74 171.6C64.68 171.6 56.47 169.68 49.37 165.87C42.27 162.05 36.5 157.24 32.07 151.44L32.07 212.24L0 212.24L0 42.61L32.07 42.61L32.07 60.94C36.2 55.14 41.89 50.29 49.14 46.39ZM203 46.51C209.65 42.69 217.24 40.78 225.8 40.78L225.8 74.46L217.32 74.46C207.24 74.46 199.64 76.83 194.52 81.56C189.41 86.3 186.85 94.54 186.85 106.3L186.85 169.53L154.78 169.53L154.78 42.61L186.85 42.61L186.85 62.32C190.97 55.6 196.36 50.33 203 46.51ZM332.95 94.16C332.8 85.91 329.82 79.31 324.01 74.34C318.21 69.38 311.11 66.9 302.71 66.9C294.76 66.9 288.08 69.3 282.66 74.11C277.24 78.93 273.92 85.61 272.7 94.16L332.95 94.16ZM365.25 115.7L272.47 115.7C273.23 124.86 276.44 132.04 282.09 137.23C287.74 142.43 294.69 145.02 302.94 145.02C314.85 145.02 323.33 139.91 328.37 129.67L362.96 129.67C359.3 141.89 352.27 151.93 341.88 159.8C331.5 167.67 318.75 171.6 303.62 171.6C291.4 171.6 280.45 168.89 270.75 163.46C261.05 158.04 253.49 150.37 248.07 140.44C242.64 130.51 239.93 119.06 239.93 106.07C239.93 92.94 242.61 81.41 247.95 71.48C253.3 61.55 260.78 53.92 270.41 48.57C280.03 43.23 291.1 40.55 303.62 40.55C315.69 40.55 326.5 43.15 336.04 48.34C345.59 53.53 353 60.91 358.26 70.45C363.53 80 366.17 90.95 366.17 103.32C366.17 107.91 365.86 112.03 365.25 115.7ZM422.68 143.19L479.26 143.19L479.26 169.53L386.25 169.53L386.25 143.65L441.69 68.96L386.48 68.96L386.48 42.61L479.28 42.51L479.28 68.39L422.68 143.19ZM506.66 0H538.74V169.53H506.66ZZM658.06 86.03C655 80.45 650.88 76.18 645.69 73.2C640.49 70.22 634.92 68.73 628.96 68.73C623 68.73 617.51 70.18 612.47 73.08C607.43 75.99 603.34 80.22 600.21 85.8C597.08 91.38 595.51 97.98 595.51 105.62C595.51 113.25 597.08 119.93 600.21 125.66C603.34 131.39 607.46 135.78 612.58 138.83C617.7 141.89 623.15 143.42 628.96 143.42C634.92 143.42 640.49 141.93 645.69 138.95C650.88 135.97 655 131.7 658.06 126.12C661.11 120.55 662.64 113.86 662.64 106.07C662.64 98.28 661.11 91.6 658.06 86.03ZM570.43 71.48C575.54 61.55 582.49 53.92 591.27 48.57C600.05 43.22 609.87 40.55 620.71 40.55C630.18 40.55 638.47 42.46 645.57 46.28C652.67 50.1 658.36 54.91 662.64 60.71L662.64 42.61L694.94 42.61L694.94 169.53L662.64 169.53L662.64 150.98C658.51 156.93 652.82 161.86 645.57 165.75C638.31 169.65 629.95 171.6 620.48 171.6C609.79 171.6 600.05 168.85 591.27 163.35C582.49 157.85 575.54 150.1 570.43 140.09C565.31 130.09 562.75 118.6 562.75 105.62C562.75 92.79 565.31 81.41 570.43 71.48ZM817.93 85.8C814.79 80.23 810.67 75.99 805.55 73.08C800.44 70.18 794.9 68.73 788.94 68.73C783.14 68.73 777.68 70.22 772.56 73.2C767.45 76.18 763.32 80.49 760.19 86.14C757.06 91.79 755.5 98.44 755.5 106.07C755.5 113.71 757.06 120.36 760.19 126.01C763.32 131.66 767.45 135.97 772.56 138.95C777.68 141.93 783.14 143.42 788.94 143.42C794.9 143.42 800.44 141.89 805.55 138.84C810.67 135.78 814.79 131.43 817.93 125.78C821.05 120.13 822.62 113.4 822.62 105.62C822.62 97.98 821.05 91.38 817.93 85.8ZM772.56 46.28C779.82 42.46 788.1 40.55 797.42 40.55C808.26 40.55 818.08 43.23 826.86 48.57C835.64 53.92 842.59 61.51 847.71 71.37C852.82 81.22 855.38 92.64 855.38 105.62C855.38 118.6 852.82 130.09 847.71 140.1C842.59 150.1 835.64 157.85 826.86 163.35C818.08 168.85 808.26 171.6 797.42 171.6C787.95 171.6 779.67 169.72 772.56 165.98C765.46 162.24 759.77 157.39 755.5 151.44L755.5 169.53L723.42 169.53L723.42 0L755.5 0L755.5 61.17C759.62 55.06 765.31 50.1 772.56 46.28Z"/></svg><span class="product" id="app-name">Icon Placer · test console</span></h1>
+  <span id="status" class="counts">Loading library…</span>
   <nav>
     <button data-tab="run" class="on">Run on a deck</button>
     <button data-tab="library">Library</button>
@@ -257,7 +288,8 @@ const HOST = window.HOST;
 const U = path => (HOST ? HOST.base : "") + path;
 if (HOST) {
   document.documentElement.classList.add("hosted");
-  document.title = $("header h1").textContent = "Prezlab Icons";
+  document.title = "Prezlab Icons";
+  $("#app-name").textContent = "Icons";
 }
 const img = (id, px) => `<img class="ic" src="${U(`icons/${encodeURIComponent(id)}.svg`)}" width="${px}" height="${px}" alt="${esc(id)}">`;
 const chips = (list, cls = "") => (list || []).map(t => `<span class="chip ${cls}">${esc(t)}</span>`).join("");
@@ -265,6 +297,7 @@ let lib = {icons: [], concept_map: {}};
 
 // tabs (#library deep-links to the library tab)
 function show(tab) {
+  document.documentElement.dataset.tab = tab;   // the header's library counts show on the Library tab only
   document.querySelectorAll("nav button[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
   $("#tab-run").hidden = tab !== "run";
   $("#tab-library").hidden = tab !== "library";
@@ -279,8 +312,10 @@ async function loadLibrary() {
     if (!r.ok) throw new Error(r.status === 404 ? "gone" : `Server error ${r.status}`);
     lib = await r.json();
   } catch (e) {
+    $("#status").classList.remove("counts");   // a problem shows on every tab
     $("#status").textContent = !HOST ? "Library not reachable: is the server running?"
-      : e.message === "gone" ? "This run has expired (runs last 24 hours). Ask Claude to start a new one."
+      : e.message === "gone" ? "This run has expired (runs last 24 hours). " + (HOST.source === "web"
+        ? "Open your Prezlab Icons web page again to start a new one." : "Ask Claude to start a new one.")
       : "Prezlab Icons isn't reachable right now. Try again in a moment.";
     $("#run button").disabled = !!HOST;
     return;
@@ -289,6 +324,7 @@ async function loadLibrary() {
   const src = lib.indexed_from_filenames ? " · no icons.json, matched on file names" : "";
   const approved = lib.icons.filter(i => i.status === "approved").length;
   const others = lib.icons.length - approved ? ` · ${lib.icons.length - approved} sample or deprecated` : "";
+  $("#status").classList.add("counts");
   $("#status").textContent = `${approved} icons · ${Object.keys(lib.concept_map).length} concepts${others}${warn}${src}`;
   $("#llm-note").textContent = lib.llm
     ? "Concepts are extracted with the Claude API."

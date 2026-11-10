@@ -23,3 +23,10 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY    # Claude picks the icons; without it, keyword matching (rougher picks)
         sync: false
+      # The web page for people without Claude (/web): Odoo sign-in, with Image Studio's values. Empty: the page is off.
+      - key: ODOO_URL
+        sync: false
+      - key: ODOO_DB
+        sync: false
+      - key: ODOO_ALLOWED_EMAIL_DOMAIN
+        value: prezlab.com

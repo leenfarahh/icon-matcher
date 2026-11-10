@@ -8,7 +8,8 @@ page in the browser. Decks never pass through the chat: the page sends them stra
 designer attached to their message is sent by Claude from its code tools (attached_deck) into the open page. Claude
 follows along with get_icon_run and can add icons from the chat with choose_icons. The original deck is never changed.
 Runs (deck, copy, link) are deleted after ICON_RUN_TTL_HOURS. Designers never sign in: the hosted connector's address
-carries a secret instead (auth.py). Hosting: connector-setup.md."""
+carries a secret instead (auth.py). People without Claude sign in with Odoo on the web page (web.py) and start runs
+there, which open the same page at the run's private link. Hosting: connector-setup.md."""
 import hmac
 import json
 import logging
@@ -32,9 +33,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import CallToolResult, TextContent, ToolAnnotations
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import auth, config, jobs, pages
+from . import auth, config, jobs, pages, web
 from .library import Library
 
 log = logging.getLogger("icon-connector")
@@ -219,6 +220,36 @@ def _send_command(path: str, url: str) -> str:
     return f"curl -sS --fail-with-body -F {shlex.quote('deck=@' + quoted)} {shlex.quote(url)}"
 
 
+def _new_run(mode: str = "replace", slides: str = "", attached_deck: str = "", allow_filled: bool = False,
+             source: str = "claude") -> dict:
+    """A new run, waiting for its deck. source: who started it, Claude (start_icon_run) or the web page (web.py)."""
+    _cleanup()
+    run_id = uuid.uuid4().hex[:12]
+    run_dir = config.WORK_DIR / run_id
+    run_dir.mkdir(parents=True)
+    now = time.time()
+    # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
+    return _write(run_dir, {
+        "id": run_id, "token": secrets.token_urlsafe(24), "source": source, "mode": mode,
+        "allow_filled": allow_filled, "status": "waiting", "error": "",
+        "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
+        "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
+        if attached_deck else None,
+        "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
+
+
+def _start_web_run(email: str) -> str:
+    """The web page's Start (web.py), for the person signed in there: a new run in replace mode, filled icons off (the
+    designer can change both on the page). Returns its private link."""
+    run = _new_run(source="web")
+    log.info("run %s started from the web page by %s", run["id"], email)
+    return _link(run)
+
+
+async def _home(request: Request) -> Response:
+    return RedirectResponse(web.PATH, 303)
+
+
 def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slides: str = "",
                    attached_deck: str = "", allow_filled: bool = False) -> CallToolResult:
     """Open Prezlab Icons for a PowerPoint deck: it places icons from Prezlab's approved library and returns a new
@@ -242,20 +273,8 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
     if attached_deck and not attached_deck.lower().endswith(".pptx"):
         raise ToolError("attached_deck: the path of the attached .pptx (a .ppt must be saved as .pptx in PowerPoint "
                         "first), or empty")
-    _cleanup()
-    run_id = uuid.uuid4().hex[:12]
-    run_dir = config.WORK_DIR / run_id
-    run_dir.mkdir(parents=True)
-    now = time.time()
-    # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
-    run = _write(run_dir, {
-        "id": run_id, "token": secrets.token_urlsafe(24), "mode": mode, "allow_filled": allow_filled,
-        "status": "waiting", "error": "",
-        "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
-        "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
-        if attached_deck else None,
-        "created": now, "expires": now + config.RUN_TTL_HOURS * 3600})
-    link = _link(run)
+    run = _new_run(mode, slides, attached_deck, allow_filled)
+    run_id, link = run["id"], _link(run)
     told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires_in_hours": config.RUN_TTL_HOURS,
             "next": "The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
                     "in one line to upload their deck there; don't paste the link. Only where no panel shows (the "
@@ -372,7 +391,7 @@ PANEL_ORIGIN = re.compile(r"https://[a-z0-9-]+\.claudemcpcontent\.com")   # wher
 MODES = ("replace", "add", "suggest")
 MAX_ICON_MB = 5
 EXPIRED = (f"This run has expired (runs and their files are deleted after {config.RUN_TTL_HOURS:g} hours). "
-           "Ask Claude to start a new one.")
+           "Ask Claude to start a new one, or start one from your Prezlab Icons web page.")
 SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"   # an icon opened on its own runs nothing
 
 
@@ -384,10 +403,11 @@ def _page(host: str) -> str:
     return page.replace(HOST_MARK, host, 1)
 
 
-def panel_html() -> str:
+def panel_html(origin: str = "") -> str:
     """The panel Claude shows: the page, the MCP Apps client and the bridge (panel.js), all inline, since a panel can't
     load scripts from anywhere. The client is an ES module; inside one async function, with its export statement
-    turned into a name, it runs as a plain script, as Image Studio's panel does."""
+    turned into a name, it runs as a plain script, as Image Studio's panel does. The brand font comes from this
+    server (origin), which the panel's CSP allows."""
     client = (STATIC / APPS_CLIENT).read_text(encoding="utf-8")
     exports = re.search(r"export\s*\{([^}]*)\}\s*;?\s*$", client)
     name = exports and re.search(r"([\w$]+) as App\b", exports.group(1))
@@ -398,7 +418,8 @@ def panel_html() -> str:
     host = ('window.HOST = (() => { let resolve; const ready = new Promise(r => resolve = r); '
             'return {mode: "panel", base: "", ready, resolve}; })();')
     script = script.replace("</script", "<\\/script")   # a literal </script> in the code would end the tag early
-    return _page(f"<script>{host}</script>\n<script>{script}</script>")
+    page = _page(f"<script>{host}</script>\n<script>{script}</script>")
+    return page.replace('url("/fonts/', f'url("{origin}/fonts/')
 
 
 def _gone() -> HTMLResponse:
@@ -423,8 +444,8 @@ async def run_page(request: Request) -> Response:
     if found is None:
         return _gone()
     run = found[1]
-    base = json.dumps(f"/runs/{run['id']}/{run['token']}/")
-    host = f'<script>window.HOST = {{mode: "page", base: {base}, ready: Promise.resolve()}};</script>'
+    base, source = json.dumps(f"/runs/{run['id']}/{run['token']}/"), json.dumps(run.get("source", "claude"))
+    host = f'<script>window.HOST = {{mode: "page", base: {base}, source: {source}, ready: Promise.resolve()}};</script>'
     return HTMLResponse(_page(host), headers=pages.PRIVATE)
 
 
@@ -624,6 +645,21 @@ API = [("/state", ["GET"], _state), ("/library", ["GET"], _library_index), ("/ic
        ("/jobs/{job}/slides/{n:int}.png", ["GET"], _slide), ("/jobs/{job}/download", ["GET"], _download)]
 
 
+FONTS = STATIC / "fonts"
+
+
+async def font(request: Request) -> Response:
+    """The brand font (static/fonts), for the page, the sign-in pages and Claude's panel, which loads it from another
+    origin: fonts need CORS for that."""
+    name = request.path_params["name"]
+    path = FONTS / name
+    if not (re.fullmatch(r"[\w-]+\.woff2", name) and path.is_file()):
+        return Response(status_code=404)
+    return FileResponse(path, media_type="font/woff2", headers={
+        "Access-Control-Allow-Origin": "*", "Cross-Origin-Resource-Policy": "cross-origin",
+        "Cache-Control": "public, max-age=86400"})
+
+
 async def health(request: Request) -> Response:
     return JSONResponse({"ok": True, "icons": len(_library().icons)})
 
@@ -723,7 +759,7 @@ def build_app(mode: str | None = None):
     url = urlparse(config.PUBLIC_URL)
     origin = f"{url.scheme}://{url.netloc}"
     apps = Apps()   # the panel: start_icon_run shows it; it may reach this server only (CSP), for data and icons
-    apps.add_html_resource(PANEL_URI, panel_html(), name="Prezlab Icons",
+    apps.add_html_resource(PANEL_URI, panel_html(origin), name="Prezlab Icons",
                            description="Run a deck, review the picks, choose icons for flagged placeholders, download.",
                            csp=ResourceCsp(connect_domains=[origin], resource_domains=[origin]))
     fn, annotations = PANEL_TOOL
@@ -735,7 +771,12 @@ def build_app(mode: str | None = None):
     for path, methods, handler in API:
         server.custom_route(RUN_LINK + path, [*methods, "OPTIONS"])(_api(handler))
     server.custom_route("/health", ["GET"])(health)
-    local = ["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
+    server.custom_route("/fonts/{name}", ["GET"])(font)
+    if web.enabled():   # the web page for people without Claude, behind Odoo sign-in; the service's address leads there
+        web.check()
+        server.custom_route(web.PATH, ["GET", "POST"])(web.endpoint(_start_web_run))
+        server.custom_route("/", ["GET"])(_home)
+    local =["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
     security = TransportSecuritySettings(   # Host and Origin checks against DNS rebinding
         enable_dns_rebinding_protection=True, allowed_hosts=[url.netloc, *local],
         allowed_origins=[f"{url.scheme}://{url.netloc}", "https://claude.ai", "https://pivot.claude.ai",

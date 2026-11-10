@@ -25,6 +25,11 @@ PUBLIC_URL = (os.getenv("ICON_PUBLIC_URL") or os.getenv("RENDER_EXTERNAL_URL") o
 AUTH = os.getenv("ICON_AUTH", "").lower()       # secret | token | none; empty: picked from the settings below
 MCP_SECRET = os.getenv("ICON_MCP_SECRET", "")   # secret mode: the secret in the connector's address (/mcp/<secret>)
 MCP_TOKEN = os.getenv("ICON_MCP_TOKEN", "")     # token mode: the one shared bearer token
+# The web page for people without Claude (web.py, at /web) signs them in with their Odoo login, two-factor included, as
+# Image Studio does: the same values as Image Studio's. Off unless both URL and database are set.
+ODOO_URL = os.getenv("ODOO_URL", "").rstrip("/")
+ODOO_DB = os.getenv("ODOO_DB", "")
+ODOO_ALLOWED_EMAIL_DOMAIN = os.getenv("ODOO_ALLOWED_EMAIL_DOMAIN", "prezlab.com").strip().lower()   # "" = any
 RUN_TTL_HOURS = float(os.getenv("ICON_RUN_TTL_HOURS", "24"))   # a run's deck, copy and links are deleted after this
 MAX_DECK_MB = int(os.getenv("ICON_MAX_DECK_MB", "150"))
 PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed at the same time; the rest queue

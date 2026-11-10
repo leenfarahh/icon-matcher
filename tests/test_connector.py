@@ -4,12 +4,13 @@ import json
 import shlex
 import time
 
+import httpx2
 import pytest
 from pptx import Presentation
 from pptx.util import Inches
 from starlette.testclient import TestClient
 
-from app import auth, config, connector
+from app import auth, config, connector, odoo, web
 from app.library import Library
 from test_pipeline import make_deck, make_library, pl_logo
 
@@ -26,6 +27,8 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "WORK_DIR", tmp_path / "jobs")
     monkeypatch.setattr(config, "LIBRARY_DIR", tmp_path / "lib")
     monkeypatch.setattr(config, "PUBLIC_URL", BASE)
+    for name in ("ODOO_URL", "ODOO_DB"):   # the web page is off unless a test sets it up (fake_odoo), whatever .env says
+        monkeypatch.setattr(config, name, "")
     make_library(tmp_path / "lib")
     connector._lib.clear()
     yield tmp_path
@@ -386,6 +389,17 @@ def test_expired_runs_and_wrong_links_lead_nowhere_and_are_deleted(env):
         assert not run_dir.exists()
 
 
+def test_the_brand_font_reaches_the_page_and_claudes_panel(env):
+    with client() as c:
+        font = c.get("/fonts/Figtree-latin.woff2", headers={"Origin": PANEL})
+        assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
+        assert font.headers["access-control-allow-origin"] == "*"            # the panel loads it from another origin
+        assert c.get("/fonts/missing.woff2").status_code == 404 and c.get("/fonts/icons.json").status_code == 404
+    panel = connector.panel_html(BASE)
+    assert f'url("{BASE}/fonts/Figtree-latin.woff2")' in panel and 'url("/fonts/' not in panel
+    assert 'class="wordmark"' in panel and 'aria-label="Prezlab"' in panel
+
+
 # --- who may call the connector ----------------------------------------------------------------------------------
 
 SECRET = "s3cr3t-" + "x" * 33
@@ -441,6 +455,163 @@ def test_token_mode_needs_the_token_for_tools_but_not_for_the_run_pages(monkeypa
                                                                 "method": "tools/list"}).status_code == 401
         error, run = call(c, "start_icon_run", {"Authorization": "Bearer " + "s" * 40})
         assert not error and c.get(run["link"]).status_code == 200 and c.get(run["link"] + "/state").status_code == 200
+
+
+# --- the web page for people without Claude: Odoo sign-in --------------------------------------------------------
+
+ODOO = "https://prezlab.odoo.test"
+TOTP_PAGE = '<form><input type="hidden" name="csrf_token" value="csrf-0123456789"><input name="totp_token"></form>'
+WEB = "/web"
+
+
+class FakeOdoo:
+    """Odoo's login endpoints, as Image Studio found them: designer@ signs in with a password, twofa@ also needs the
+    code 123456 (or a trusted device), client@ is a portal user. Odoo sessions are s-<uid> once signed in, p-<uid>
+    while waiting for a code."""
+    USERS = {"designer@prezlab.com": (7, False), "twofa@prezlab.com": (8, True), "client@example.com": (9, False)}
+
+    def __init__(self):
+        self.devices, self.passwords_sent = set(), 0
+
+    def __call__(self, request):
+        from urllib.parse import parse_qs
+        cookies = dict(c.split("=", 1) for c in request.headers.get("cookie", "").split("; ") if "=" in c)
+        session, path = cookies.get("session_id", ""), request.url.path
+        if path == "/web/session/authenticate":
+            self.passwords_sent += 1
+            p = json.loads(request.content)["params"]
+            uid, twofa = self.USERS.get(p["login"].lower(), (0, False))
+            if not uid or p["password"] != "pw" or p["db"] != "prezlab":
+                return httpx2.Response(200, json={"error": {"data": {"message": "Access Denied"}}})
+            return httpx2.Response(200, json={"result": {"uid": False if twofa else uid}},
+                                   headers={"set-cookie": f"session_id={'p' if twofa else 's'}-{uid}; Path=/"})
+        if path == "/web/login/totp" and request.method == "GET":
+            if session.startswith("p-") and cookies.get("td_id") in self.devices:
+                return httpx2.Response(303, headers={"location": "/odoo", "set-cookie": f"session_id=s-{session[2:]}"})
+            return httpx2.Response(200, text=TOTP_PAGE if session.startswith("p-") else "<form>login</form>")
+        if path == "/web/login/totp":
+            form = {k: v[0] for k, v in parse_qs(request.content.decode()).items()}
+            if form.get("totp_token") != "123456" or form.get("csrf_token") != "csrf-0123456789":
+                return httpx2.Response(200, text=TOTP_PAGE)
+            self.devices.add(f"td-{session}")
+            return httpx2.Response(303, headers=[("location", "/odoo"), ("set-cookie", f"td_id=td-{session}; Path=/"),
+                                                 ("set-cookie", f"session_id=s-{session[2:]}; Path=/")])
+        uid = int(session[2:]) if session.startswith("s-") else 0
+        if path == "/web/session/get_session_info":
+            return httpx2.Response(200, json={"result": {"uid": uid or False}})
+        if path == "/web/dataset/call_kw":
+            login = next(k for k, v in self.USERS.items() if v[0] == uid)
+            return httpx2.Response(200, json={"result": [{"login": login, "name": login.split("@")[0], "email": login,
+                                                          "active": True, "share": uid == 9}]})
+        return httpx2.Response(404)
+
+
+@pytest.fixture
+def fake_odoo(monkeypatch):
+    fake = FakeOdoo()
+    monkeypatch.setattr(config, "ODOO_URL", ODOO)
+    monkeypatch.setattr(config, "ODOO_DB", "prezlab")
+    monkeypatch.setattr(odoo, "TRANSPORT", httpx2.MockTransport(fake))
+    monkeypatch.setattr(web, "_limits", web._Limits())
+    return fake
+
+
+def runs(env):
+    return sorted((env / "jobs").glob("*/run.json"))
+
+
+def sign_in(c, login="designer@prezlab.com", password="pw"):
+    return c.post(WEB, data={"login": login, "password": password}, follow_redirects=False)
+
+
+def test_people_without_claude_sign_in_with_odoo_and_start_runs_on_the_web_page(env, fake_odoo):
+    with client() as c:
+        assert c.get("/", follow_redirects=False).headers["location"] == WEB
+        first = c.get(WEB)
+        assert first.status_code == 200 and 'name="password"' in first.text and first.headers["x-robots-tag"] == "noindex"
+        assert c.post(WEB, data={"start": "1"}).status_code == 403 and not runs(env)   # not signed in
+
+        wrong = sign_in(c, password="nope")
+        assert wrong.status_code == 401 and "combination wasn&#x27;t recognized" in wrong.text and not c.cookies
+        entered = sign_in(c)                                                     # signed in: straight to a run
+        assert entered.status_code == 303 and entered.headers["location"].startswith(f"{BASE}/runs/")
+        cookie = entered.headers["set-cookie"].lower()
+        assert f"{web.SESSION}=" in cookie and "path=/web" in cookie and "httponly" in cookie and "samesite=lax" in cookie
+        assert "designer" not in cookie                                          # sealed: the browser can't read it
+        page = c.get(entered.headers["location"])
+        assert page.status_code == 200 and 'source: "web"' in page.text
+        state = c.get(entered.headers["location"] + "/state").json()
+        assert state["status"] == "waiting" and state["mode"] == "replace" and not state["allow_filled"]
+
+        again = c.get(WEB)   # signed in: Start, and opening the page (a link preview too) starts nothing
+        assert "Start with a deck" in again.text and "designer@prezlab.com" in again.text and len(runs(env)) == 1
+        second = c.post(WEB, data={"start": "1"}, follow_redirects=False)
+        assert second.status_code == 303 and second.headers["location"] != entered.headers["location"]
+        assert len(runs(env)) == 2
+        deck = env / "deck.pptx"   # a web run is a run like any other
+        make_deck(deck, ["Revenue growth of 22%", "Team expansion", "Risk management"])
+        assert run_deck(c, second.headers["location"] + "/", deck, mode="add").status_code == 200
+
+        out = c.post(WEB, data={"signout": "1"})
+        assert "signed out" in out.text and 'name="password"' in c.get(WEB).text
+        assert c.post(WEB, data={"start": "1"}).status_code == 403 and len(runs(env)) == 2
+
+
+def test_two_factor_asks_for_a_code_once_per_browser(env, fake_odoo):
+    with client() as c:
+        asked = sign_in(c, "twofa@prezlab.com")
+        assert "Enter your code" in asked.text and "Enter your code" in c.get(WEB).text
+        sent = fake_odoo.passwords_sent
+        wrong = c.post(WEB, data={"code": "000000"})
+        assert wrong.status_code == 401 and "Enter your code" in wrong.text
+        done = c.post(WEB, data={"code": "123 456"}, follow_redirects=False)
+        assert done.status_code == 303 and fake_odoo.passwords_sent == sent      # the password went to Odoo once
+        device = c.cookies.get(web.DEVICE)
+        assert device and "td-" not in device                                     # the 2FA bypass key is sealed
+
+        c.post(WEB, data={"signout": "1"})
+        assert sign_in(c, "TwoFA@prezlab.com").status_code == 303                 # this browser: no code needed
+
+        c.post(WEB, data={"signout": "1"})
+        fake_odoo.devices.clear()                                                 # Odoo forgot the device
+        assert "Enter your code" in sign_in(c, "twofa@prezlab.com").text
+        assert 'name="password"' in c.post(WEB, data={"restart": "1"}).text and 'name="password"' in c.get(WEB).text
+
+    with client() as other:                                                       # another browser is asked
+        assert "Enter your code" in sign_in(other, "twofa@prezlab.com").text
+
+
+@pytest.mark.parametrize("login, message", [("client@example.com", "portal account"),
+                                            ("nobody@prezlab.com", "recognized")])
+def test_only_prezlab_staff_can_sign_in(env, fake_odoo, login, message):
+    with client() as c:
+        refused = sign_in(c, login)
+        assert refused.status_code == 401 and message in refused.text and not runs(env)
+
+
+def test_sign_in_attempts_are_rate_limited_and_forged_cookies_lead_nowhere(env, fake_odoo):
+    with client() as c:
+        codes = [sign_in(c, password="nope").status_code for _ in range(7)]
+        assert codes == [401] * 6 + [429]
+        forged = {"Cookie": f"{web.SESSION}=" + "A" * 80}
+        assert 'name="password"' in c.get(WEB, headers=forged).text
+        assert c.post(WEB, data={"start": "1"}, headers=forged).status_code == 403 and not runs(env)
+
+
+def test_the_web_page_is_off_unless_odoo_is_set_up(env, monkeypatch):
+    with client() as c:
+        assert c.get(WEB).status_code == 404 and c.get("/").status_code == 404
+    monkeypatch.setattr(config, "ODOO_URL", ODOO)
+    with pytest.raises(RuntimeError, match="both ODOO_URL and ODOO_DB"):
+        connector.build_app("none")
+    monkeypatch.setattr(config, "ODOO_DB", "prezlab")
+    monkeypatch.setattr(config, "ODOO_URL", "http://prezlab.odoo.test")
+    with pytest.raises(RuntimeError, match="ODOO_URL must be an https"):
+        connector.build_app("none")
+    monkeypatch.setattr(config, "ODOO_URL", ODOO)
+    monkeypatch.setattr(config, "PUBLIC_URL", "http://prezlab-icons.onrender.com")
+    with pytest.raises(RuntimeError, match="ICON_PUBLIC_URL must be an https"):
+        web.check()
 
 
 # --- the test UI's runs share the same apply step ---------------------------------------------------------------
