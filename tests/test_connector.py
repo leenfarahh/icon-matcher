@@ -10,7 +10,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from starlette.testclient import TestClient
 
-from app import auth, config, connector, odoo, web
+from app import auth, config, connector, odoo, pages, web
 from app.library import Library
 from test_pipeline import make_deck, make_library, pl_logo
 
@@ -398,6 +398,16 @@ def test_the_brand_font_reaches_the_page_and_claudes_panel(env):
     panel = connector.panel_html(BASE)
     assert f'url("{BASE}/fonts/Figtree-latin.woff2")' in panel and 'url("/fonts/' not in panel
     assert 'class="wordmark"' in panel and 'aria-label="Prezlab"' in panel
+
+
+def test_the_run_page_and_the_sign_in_pages_carry_the_pl_mark_in_the_tab_but_the_panel_doesnt(env):
+    with client() as c:
+        mark = c.get("/favicon.png")
+        assert mark.status_code == 200 and mark.headers["content-type"] == "image/png"
+        assert mark.content.startswith(b"\x89PNG")
+        assert c.get("/health").json()["slide_pictures"] in (True, False)   # LibreOffice reached, where it's hosted
+    assert pages.TAB_ICON in connector._page("") and pages.TAB_ICON in pages.render("<p>hi</p>").body.decode()
+    assert "favicon" not in connector.panel_html(BASE)                     # a panel has no tab
 
 
 # --- who may call the connector ----------------------------------------------------------------------------------

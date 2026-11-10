@@ -8,11 +8,13 @@ from starlette.responses import HTMLResponse
 # Never cached, indexed, framed or sent on as a referrer: run links carry secrets in their path.
 PRIVATE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex",
            "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'"}
+# The "pl:" mark in the browser tab, as Image Studio's (static/brand/README.md). static/index.html carries the same line.
+TAB_ICON = '<link rel="icon" type="image/png" href="/favicon.png">'
 WORDMARK = ((Path(__file__).parent / "static" / "brand" / "prezlab-wordmark.svg").read_text(encoding="utf-8").strip()
             .replace('<svg xmlns="http://www.w3.org/2000/svg" ', '<svg class="wordmark" ', 1))
 PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">%REFRESH%<title>Prezlab Icons</title><style>
+<meta name="robots" content="noindex">%REFRESH%<title>Prezlab Icons</title>%TAB_ICON%<style>
 @font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin.woff2") format("woff2"); font-weight: 300 900;
   font-display: swap; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
   U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
@@ -94,7 +96,7 @@ addEventListener("pageshow", function () {
     if (button && button.dataset.label) { button.textContent = button.dataset.label; button.disabled = false; }
   });
 });
-</script></body></html>""".replace("%WORDMARK%", WORDMARK)
+</script></body></html>""".replace("%WORDMARK%", WORDMARK).replace("%TAB_ICON%", TAB_ICON)
 
 
 def render(body: str, status: int = 200, refresh: bool = False) -> HTMLResponse:

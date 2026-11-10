@@ -35,7 +35,7 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import auth, config, jobs, pages, web
+from . import auth, config, jobs, pages, render, web
 from .library import Library
 
 log = logging.getLogger("icon-connector")
@@ -418,7 +418,7 @@ def panel_html(origin: str = "") -> str:
     host = ('window.HOST = (() => { let resolve; const ready = new Promise(r => resolve = r); '
             'return {mode: "panel", base: "", ready, resolve}; })();')
     script = script.replace("</script", "<\\/script")   # a literal </script> in the code would end the tag early
-    page = _page(f"<script>{host}</script>\n<script>{script}</script>")
+    page = _page(f"<script>{host}</script>\n<script>{script}</script>").replace(pages.TAB_ICON, "", 1)   # a panel has no tab
     return page.replace('url("/fonts/', f'url("{origin}/fonts/')
 
 
@@ -660,8 +660,17 @@ async def font(request: Request) -> Response:
         "Cache-Control": "public, max-age=86400"})
 
 
+TAB_ICON = STATIC / "brand" / "prezlab-icon.png"
+
+
+async def tab_icon(request: Request) -> Response:
+    """The "pl:" mark in the browser tab, for the run page and the sign-in pages (static/brand/README.md)."""
+    return FileResponse(TAB_ICON, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def health(request: Request) -> Response:
-    return JSONResponse({"ok": True, "icons": len(_library().icons)})
+    """Up, how many icons, and whether slide pictures can be made here (LibreOffice in the Docker image)."""
+    return JSONResponse({"ok": True, "icons": len(_library().icons), "slide_pictures": render.available()})
 
 
 # --- app --------------------------------------------------------------------------------------------------------
@@ -772,6 +781,7 @@ def build_app(mode: str | None = None):
         server.custom_route(RUN_LINK + path, [*methods, "OPTIONS"])(_api(handler))
     server.custom_route("/health", ["GET"])(health)
     server.custom_route("/fonts/{name}", ["GET"])(font)
+    server.custom_route("/favicon.png", ["GET"])(tab_icon)
     if web.enabled():   # the web page for people without Claude, behind Odoo sign-in; the service's address leads there
         web.check()
         server.custom_route(web.PATH, ["GET", "POST"])(web.endpoint(_start_web_run))

@@ -30,6 +30,12 @@ def font(name: str):
     return FileResponse(path, media_type="font/woff2")
 
 
+@app.get("/favicon.png")
+def tab_icon():
+    """The "pl:" mark in the browser tab (static/brand/README.md)."""
+    return FileResponse(STATIC / "brand" / "prezlab-icon.png", media_type="image/png")
+
+
 @app.get("/health")
 def health():
     return {"library": str(library.root), "found": library.root.exists(),

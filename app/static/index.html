@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Icon Placer · test console</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <style>
   /* Prezlab Brand Kit v1.0, as Image Studio applies it (static/brand/README.md): the corporate palette only, Figtree
      for all UI text, and Orange only to mark what needs attention. Dark Teal anchors (the header, primary actions),
@@ -291,6 +292,50 @@ if (HOST) {
   document.title = "Prezlab Icons";
   $("#app-name").textContent = "Icons";
 }
+// Done while the designer looked elsewhere: as in Image Studio, a run or an "Add chosen" that finishes while this tab is
+// out of view (another tab, a minimized window, another app in front) puts a count in the title, "(1) Prezlab Icons",
+// and a red dot on the tab's "pl:" mark. Both go as soon as the designer is back. Failures count too: either way the
+// wait is over. Claude's panel has no tab of its own.
+const notifyDone = (() => {
+  if (HOST && HOST.mode === "panel") return () => {};
+  const COUNT = /^\(\d+\) /;
+  const link = document.querySelector('link[rel~="icon"]');
+  const plain = link && link.getAttribute("href");
+  let unseen = 0, dotted = null;
+  // Drawn from the real mark, so the two can't drift apart. The mark steps back to 52px of 64, bottom-left, and the
+  // dot sits in the freed corner: laid over the mark, it would read as part of the "pl:" colon.
+  const dot = () => dotted ??= new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = Object.assign(document.createElement("canvas"), {width: 64, height: 64});
+      const c = canvas.getContext("2d");
+      if (!c) return resolve(null);
+      c.drawImage(image, 0, 12, 52, 52);
+      c.beginPath();
+      c.arc(56, 8, 8, 0, Math.PI * 2);
+      c.fillStyle = "#e5484d";
+      c.fill();
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = () => resolve(null);
+    image.src = plain;
+  });
+  const back = () => {   // visible again is enough: switching back to the tab is the designer looking
+    if (document.hidden || !unseen) return;
+    unseen = 0;
+    document.title = document.title.replace(COUNT, "");
+    if (link) link.setAttribute("href", plain);
+  };
+  addEventListener("focus", back);
+  document.addEventListener("visibilitychange", back);
+  return async () => {
+    if (!document.hidden && document.hasFocus()) return;
+    unseen++;
+    document.title = `(${unseen}) ${document.title.replace(COUNT, "")}`;
+    const url = link && await dot();
+    if (url && unseen) link.setAttribute("href", url);   // unless the designer came back while it was drawn
+  };
+})();
 const img = (id, px) => `<img class="ic" src="${U(`icons/${encodeURIComponent(id)}.svg`)}" width="${px}" height="${px}" alt="${esc(id)}">`;
 const chips = (list, cls = "") => (list || []).map(t => `<span class="chip ${cls}">${esc(t)}</span>`).join("");
 let lib = {icons: [], concept_map: {}};
@@ -542,6 +587,7 @@ $("#run").onsubmit = async e => {
     $("#out").innerHTML = `<div class="panel"><div class="err">${esc(err.message)}</div></div>`;
   } finally {
     btn.disabled = false; btn.textContent = "Run";
+    notifyDone();
   }
 };
 
@@ -943,6 +989,7 @@ async function apply(r, indices, choices, msg, sync) {
   } finally {
     buttons.forEach(b => b.disabled = false);
     sync();
+    notifyDone();
   }
 }
 
