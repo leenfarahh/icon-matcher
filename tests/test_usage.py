@@ -204,10 +204,26 @@ def test_the_usage_page_is_for_its_owners_only(env, owners):
 
 def test_owners_see_a_usage_button_on_the_web_page(env, owners):
     with client() as c:
-        sign_in(c, "DESIGNER@prezlab.com")
+        entered = sign_in(c, "DESIGNER@prezlab.com")
+        assert f'usage: "{web.USAGE_PATH}"' in c.get(entered.headers["location"]).text   # the run page's tab
         start_page = c.get(WEB).text
         assert "Start with a deck" in start_page and f'href="{web.USAGE_PATH}">View usage</a>' in start_page
         assert c.get(web.USAGE_PATH).status_code == 200
+
+
+def test_nobody_else_gets_the_usage_tab_on_the_run_page(env, owners):
+    with client() as c:
+        _, claude_run = start(c)                                   # Claude's runs: nobody to tell apart
+        assert "usage: null" in c.get(claude_run["link"]).text
+        assert "usage: " not in connector_panel()                  # nor Claude's panel
+        sign_in(c, "twofa@prezlab.com")
+        entered = c.post(WEB, data={"code": "123456"}, follow_redirects=False)
+        assert "usage: null" in c.get(entered.headers["location"]).text
+
+
+def connector_panel() -> str:
+    from app import connector
+    return connector.panel_html(BASE)
 
 
 def test_the_usage_page_is_off_without_owners(env, fake_odoo, monkeypatch):

@@ -49,12 +49,13 @@ HOST.download = async url => {
   await app.openLink({url});   // the browser downloads it
 };
 
-// Full screen, where Claude offers it (an inline panel is capped in height), and the same page in the browser.
-const nav = document.querySelector("header nav");
+// Full screen, where Claude offers it (an inline panel is capped in height), and the same page in the browser: window
+// actions, so they sit in the banner (the sections are in the sidebar).
+const actions = document.querySelector("header .actions");
 const display = Object.assign(document.createElement("button"), {type: "button", hidden: true});
 const browser = Object.assign(document.createElement("button"), {type: "button", hidden: true,
                                                                   textContent: "Open in browser"});
-nav.append(display, browser);
+actions.append(display, browser);
 
 function drawDisplay() {
   const context = app.getHostContext() || {};

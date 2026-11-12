@@ -500,8 +500,11 @@ async def run_page(request: Request) -> Response:
     # A web page run belongs to its page: the address bar shows the web page, so a refresh goes back there, and
     # leaving ends the run (_end). A link from Claude stays the run's address: Claude follows that run.
     home = json.dumps(web.PATH if run.get("source") == "web" and web.enabled() else None)
+    # The usage page's tab, for the tool's owners only: a web page run knows who signed in; Claude's runs don't.
+    owner = run.get("source") == "web" and usage_page.enabled() and web.is_usage_admin({"email": run.get("person", "")})
+    to_usage = json.dumps(web.USAGE_PATH if owner else None)
     host = (f'<script>window.HOST = {{mode: "page", base: {base}, source: {source}, home: {home}, '
-            'ready: Promise.resolve()};</script>')
+            f'usage: {to_usage}, ready: Promise.resolve()}};</script>')
     return HTMLResponse(_page(host), headers=pages.PRIVATE)
 
 
