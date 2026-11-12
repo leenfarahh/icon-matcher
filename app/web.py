@@ -33,6 +33,8 @@ from . import auth, config, odoo, pages
 
 log = logging.getLogger("icon-connector.web")
 PATH = "/web"
+USAGE_PATH = PATH + "/usage"   # the usage page (usage_page.py), under PATH so the sign-in cookie reaches it
+TO_USAGE = "usage"             # PATH?to=usage: sign in, then go to the usage page instead of starting a run
 KEY_FILE = "web.key"   # in WORK_DIR, beside the runs (cleanup only deletes run folders)
 SESSION, PENDING, DEVICE = "pi_session", "pi_pending", "pi_device"
 SESSION_DAYS = 30
@@ -242,11 +244,16 @@ def _go(link: str) -> Response:
 
 def endpoint(start_run: Callable[[str], str]):
     """The page at PATH. start_run(email): opens a new run for whoever signed in and returns its private link
-    (connector.py). Only a POST starts one, so a link preview (Teams, Outlook) opening the address never does."""
+    (connector.py). Only a POST starts one, so a link preview (Teams, Outlook) opening the address never does.
+    At PATH?to=usage (where the usage page sends people not signed in), signing in leads to the usage page instead;
+    the forms post back to the same address, so it holds through the code step."""
     async def web(request: Request) -> Response:
         user = signed_in(request)
         pending = _unseal("pending", request.cookies.get(PENDING, ""))
+        to_usage = request.query_params.get("to") == TO_USAGE
         if request.method == "GET":
+            if user and to_usage:
+                return _go(USAGE_PATH)
             return _start_page(user) if user else _code_page(pending["login"]) if pending else _login_page()
         form = await request.form(max_files=0, max_fields=4)
         if "signout" in form:
@@ -259,13 +266,13 @@ def endpoint(start_run: Callable[[str], str]):
             response = _login_page()
             _forget(response, PENDING)
             return response
-        return await _sign_in(request, form, pending, start_run)
+        return await _sign_in(request, form, pending, (lambda email: USAGE_PATH) if to_usage else start_run)
     return web
 
 
 async def _sign_in(request: Request, form, pending: dict | None, start_run: Callable[[str], str]) -> Response:
     """The Odoo login, then the code if Odoo asks for one (without sending the password again); signed in, straight
-    to a new run."""
+    to a new run (or where start_run leads: the usage page)."""
     code_step = bool(pending) and "code" in form   # Odoo has the password and waits for a code
     login = (pending["login"] if code_step else str(form.get("login") or "")).strip()
     password, code = str(form.get("password") or ""), str(form.get("code") or "").strip()

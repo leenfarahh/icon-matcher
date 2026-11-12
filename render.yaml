@@ -30,3 +30,6 @@ services:
         sync: false
       - key: ODOO_ALLOWED_EMAIL_DOMAIN
         value: prezlab.com
+      # The usage page (/web/usage): the Odoo emails allowed to see it, comma-separated. Empty: the page is off.
+      - key: ICON_USAGE_ADMINS
+        sync: false

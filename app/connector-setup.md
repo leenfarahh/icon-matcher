@@ -137,6 +137,28 @@ archived in Odoo can't sign in again, but a browser already signed in keeps work
 everyone out at once, delete `/var/data/runs/web.key` from the service's **Shell**. To turn the page off, delete
 `ODOO_URL` and `ODOO_DB`.
 
+## Usage page (tool owners)
+
+The service records how the tool is used and shows it at `https://<service>.onrender.com/web/usage`: runs per day,
+where they come from (each Claude app, or the web page), how many were downloaded, how many PL placeholders were filled
+automatically, icons placed, failures, the most used icons, searches in Claude that found nothing (candidates for new
+icons), web page users, the Claude apps that connect (and whether each can show the panel), and Claude API tokens. It
+shows the last 7, 30, 90 or 365 days, and **Download CSV** exports that period's events for Excel.
+
+**Turn it on.** It needs the web page (above). In Render, **Environment**, add `ICON_USAGE_ADMINS`: the Odoo emails
+of the people who may see it, comma-separated. Save; Render redeploys. They open the address and sign in with Odoo;
+signing in there leads to the usage page and starts no run. Anyone else signed in is turned away. The page's dates
+are in Jordan time (UTC+3, all year). Optional: `ICON_USAGE_UTC_OFFSET` (hours from UTC, e.g. `4` for the UAE),
+`ICON_USAGE=0` to stop recording.
+
+**What it keeps.** One small SQLite file, `/var/data/runs/usage.db`, beside the runs on the service's disk, so it
+outlives runs and deploys. Per event: the time, the run's random id, Claude (and which Claude app) or the web page (and
+the email of who signed in there), the mode, counts (icons placed, placeholders found and filled, flags, icons chosen
+by hand, tokens), how long the deck took, library icon ids, and the words of a Claude search that found nothing (first
+60 characters). Never a deck's name, its text or labels. Claude runs aren't tied to a person, since the connector has
+no sign-in. The Claude app is the name each app gives when it connects; where two apps connect with the same user
+agent, runs show that user agent instead. To start over, delete `usage.db` from the service's **Shell**.
+
 ## Try it locally
 
     uvicorn app.connector:app --port 8001
@@ -166,11 +188,13 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
   over HTTPS. The deck's contents never go through the chat.
 - **Library.** The panel's Library tab reads the library; adding and editing icons stays in the local tool, since
   changes on Render would be lost at the next deploy.
-- **Retention.** Nothing is kept in a database. A run's deck, its copy, its slide pictures and the link live on the
-  Render disk in Frankfurt only while the run is in use: a run from the web page is deleted as soon as the designer
-  leaves or refreshes its page, and any run (Claude's too) after `ICON_RUN_IDLE_HOURS` unused (1 hour by default,
-  checked every 5 minutes; an open page keeps its run in use). Decks have no size cap. Confirm that region with whoever
-  owns Prezlab's data policy before client decks go through it.
+- **Retention.** No deck content is kept in a database. A run's deck, its copy, its slide pictures and the link live
+  on the Render disk in Frankfurt only while the run is in use: a run from the web page is deleted as soon as the
+  designer leaves or refreshes its page, and any run (Claude's too) after `ICON_RUN_IDLE_HOURS` unused (1 hour by
+  default, checked every 5 minutes; an open page keeps its run in use). Decks have no size cap. Confirm that region
+  with whoever owns Prezlab's data policy before client decks go through it.
+- **Usage.** `usage.db` on the same disk keeps counts, icon ids and web page users' emails, never deck content, with
+  no expiry (see "Usage page"). Only the people in `ICON_USAGE_ADMINS` can see it.
 - **Claude API.** With `ANTHROPIC_API_KEY` set, the slide text that needs icons goes to the Claude API to pick them,
   as it does in the local tool.
 - **Logs.** Access logs are off, because the connector's address and the run links carry secrets in the path. The

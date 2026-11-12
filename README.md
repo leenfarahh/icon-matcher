@@ -36,6 +36,12 @@ in Image Studio (`app/odoo.py`, two-factor included). Its button starts a run an
 same page as Claude's panel. Off unless `ODOO_URL` and `ODOO_DB` are set (`app/connector-setup.md`, "Web page for
 people without Claude"). The Claude connector itself still has no sign-in.
 
+**Usage** (`app/usage.py`, `app/usage_page.py`): the connector records runs started, deck runs (counts, icon ids,
+duration, Claude's tokens), icons added by hand, downloads, Claude searches that found nothing, and each Claude app's
+handshake, in `usage.db` beside the runs; never deck content. Claude runs are counted by Claude app, web page runs by
+person. The tool's owners (`ICON_USAGE_ADMINS`) see it at `/web/usage`, behind the web page's Odoo sign-in, with a CSV
+export (`app/connector-setup.md`, "Usage page").
+
 ## PL logo placeholders (app/placeholders.py)
 
 Designers drop the PL logo (as vector shapes, copied from the template) where an icon should go. The tool

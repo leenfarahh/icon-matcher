@@ -7,12 +7,13 @@ family per slide, all or nothing, and an honest
 fit (1-5) for each pick. Without a key, or when the API fails, keyword matching finds up to three ideas and the
 selector looks their icons up in the concept map and tags. For PL placeholders still left without an icon, a second
 request (CLOSEST) ranks the nearest icons for a designer to choose from."""
+import contextvars
 import json
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
-from . import config
+from . import config, usage
 from .models import Item, headline, label_of, style_set
 
 SYSTEM = """You choose icons for presentation slides. You receive an ICON LIBRARY and a set of SLIDES. Each slide
@@ -190,8 +191,7 @@ def _extract_llm(items, library, style, client=None) -> list[str]:
     if results[0] and results[0][2]:
         results = [(items, results[0][1], True)]
     elif len(batches) > 1:
-        with ThreadPoolExecutor(WORKERS) as pool:
-            results += list(pool.map(run, batches[1:]))
+        results += _parallel(run, batches[1:])
 
     notes = list(enhanced)
     if invented:
@@ -310,8 +310,7 @@ def _enhance(client, items) -> list[str]:
             i.reads_as, i.show = briefs.get(_key(i), ("", []))
         return None
 
-    with ThreadPoolExecutor(WORKERS) as pool:
-        failed = [r for r in pool.map(run, _batches(list(firsts.values()), ENHANCE_BATCH)) if r]
+    failed = [r for r in _parallel(run, _batches(list(firsts.values()), ENHANCE_BATCH)) if r]
     for i in items:
         first = firsts[label(i)]
         i.reads_as, i.show = first.reads_as, list(first.show)
@@ -335,13 +334,22 @@ def _briefs(client, batch) -> dict:
     return out
 
 
+def _parallel(fn, batches) -> list:
+    """fn on each batch, WORKERS at a time, results in order. Each runs in a copy of this thread's context, so its
+    requests' tokens count towards the deck run that sent them (usage.counting_tokens)."""
+    with ThreadPoolExecutor(WORKERS) as pool:
+        futures = [pool.submit(contextvars.copy_context().run, fn, b) for b in batches]
+        return [f.result() for f in futures]
+
+
 def _send(client, system, content, form: dict):
     """One request, its reply in the given structured form; a decline (stop reason "refusal", the fallback model's
-    too) raises Declined."""
+    too) raises Declined. Its tokens count towards the deck run (usage.py)."""
     msg = client.beta.messages.create(model=config.ANTHROPIC_MODEL, max_tokens=MAX_TOKENS, system=system,
                                       output_config={"effort": config.ANTHROPIC_EFFORT, "format": form},
                                       betas=[FALLBACK_BETA], fallbacks="default",
                                       messages=[{"role": "user", "content": content}])
+    usage.count_tokens(getattr(msg, "usage", None))
     if msg.stop_reason == "refusal":   # declined, and so was the fallback: the reply holds nothing to use
         category = getattr(getattr(msg, "stop_details", None), "category", None)
         raise Declined(f"it declined them under its {category.replace('_', ' ')} safeguards" if category
@@ -455,10 +463,9 @@ def closest(items: list[Item], library, style: str, client=None) -> tuple[list[l
             except (anthropic.APIError, ValueError) as e:
                 return {}, (len(batch), _failure(e)[0])
 
-        with ThreadPoolExecutor(WORKERS) as pool:
-            for got, failure in pool.map(run, _batches(items, CLOSEST_BATCH)):
-                found.update(got)
-                failed += [failure] if failure else []
+        for got, failure in _parallel(run, _batches(items, CLOSEST_BATCH)):
+            found.update(got)
+            failed += [failure] if failure else []
     out = []
     for i in items:
         named = [n for n in dict.fromkeys(found.get(_key(i), [])) if n in pickable]

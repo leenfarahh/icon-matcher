@@ -12,17 +12,19 @@ PRIVATE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Rob
 TAB_ICON = '<link rel="icon" type="image/png" href="/favicon.png">'
 WORDMARK = ((Path(__file__).parent / "static" / "brand" / "prezlab-wordmark.svg").read_text(encoding="utf-8").strip()
             .replace('<svg xmlns="http://www.w3.org/2000/svg" ', '<svg class="wordmark" ', 1))
-PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">%REFRESH%<title>Prezlab Icons</title>%TAB_ICON%<style>
-@font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin.woff2") format("woff2"); font-weight: 300 900;
+# The brand font and colors, shared with the usage page (usage_page.py).
+BRAND_CSS = """@font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin.woff2") format("woff2"); font-weight: 300 900;
   font-display: swap; unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
   U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Figtree"; src: url("/fonts/Figtree-latin-ext.woff2") format("woff2"); font-weight: 300 900;
   font-display: swap; unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
   U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF; }
 :root { --teal: #002528; --teal-700: #0a3336; --slate: #62848c; --mint: #b6edf3; --shell: #f4f6f6; --alert: #ff7c4a;
-  --line: rgba(98, 132, 140, .35); --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  --line: rgba(98, 132, 140, .35); --font: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif; }"""
+PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">%REFRESH%<title>Prezlab Icons</title>%TAB_ICON%<style>
+%BRAND_CSS%
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   background: var(--shell); color: var(--teal); font: 500 15px/1.4 var(--font); letter-spacing: -0.01em;
@@ -96,7 +98,7 @@ addEventListener("pageshow", function () {
     if (button && button.dataset.label) { button.textContent = button.dataset.label; button.disabled = false; }
   });
 });
-</script></body></html>""".replace("%WORDMARK%", WORDMARK).replace("%TAB_ICON%", TAB_ICON)
+</script></body></html>""".replace("%BRAND_CSS%", BRAND_CSS).replace("%WORDMARK%", WORDMARK).replace("%TAB_ICON%", TAB_ICON)
 
 
 def render(body: str, status: int = 200, refresh: bool = False) -> HTMLResponse:

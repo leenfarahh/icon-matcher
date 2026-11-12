@@ -34,6 +34,12 @@ ODOO_ALLOWED_EMAIL_DOMAIN = os.getenv("ODOO_ALLOWED_EMAIL_DOMAIN", "prezlab.com"
 # the web page as soon as the designer leaves its page. Decks have no size cap.
 RUN_IDLE_HOURS = float(os.getenv("ICON_RUN_IDLE_HOURS", "1"))
 PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed at the same time; the rest queue
+# Usage (usage.py): counts kept beside the runs, never deck content; 0 turns recording off. The usage page (/web/usage)
+# is for these people only, signed in on the web page; empty, it is off. Times there are this many hours from UTC:
+# Jordan time by default (UTC+3 all year, no daylight saving).
+USAGE = os.getenv("ICON_USAGE", "1") != "0"
+USAGE_ADMINS = {e.strip().lower() for e in os.getenv("ICON_USAGE_ADMINS", "").split(",") if e.strip()}
+USAGE_UTC_OFFSET = float(os.getenv("ICON_USAGE_UTC_OFFSET", "3"))
 
 # Fallback size tiers (inches on a 13.33in-wide slide). The library's style guide
 # or the deck's existing icons override these.

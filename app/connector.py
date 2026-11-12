@@ -36,7 +36,7 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from . import auth, config, jobs, pages, render, web
+from . import auth, config, jobs, pages, render, usage, usage_page, web
 from .library import Library
 
 log = logging.getLogger("icon-connector")
@@ -172,19 +172,37 @@ def _sweep():
         time.sleep(300)
 
 
-def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None, allow_filled: bool = False) -> dict:
-    """Run the deck (in a worker thread; PARALLEL_RUNS at a time, the rest wait their turn) and record how it went."""
+def _record(run_dir: Path, event: str, **data) -> None:
+    """A usage event for this run (usage.py), with where it started: Claude and its app, or the web page and who."""
     try:
-        with _slots:
+        run = _read(run_dir)
+    except (OSError, ValueError):
+        run = {"id": run_dir.name}
+    usage.record(event, run, **data)
+
+
+def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None, allow_filled: bool = False) -> dict:
+    """Run the deck (in a worker thread; PARALLEL_RUNS at a time, the rest wait their turn) and record how it went,
+    in the run and in usage (counts and Claude's tokens only)."""
+    try:
+        with _slots, usage.counting_tokens() as tokens:
+            began, outcome = time.monotonic(), {"ok": False}
             try:
                 result = jobs.run(run_dir, deck_file, _library(), mode, slides, allow_filled)
+                outcome = {"ok": True, **usage.deck_run(result)}
             except (ValueError, NotImplementedError) as e:
+                outcome["failure"] = "refused"
                 _update(run_dir, status="failed", error=str(e))
                 raise jobs.RunError(str(e))
             except Exception:   # a file python-pptx can't open, or a bug: the designer gets a reason, the log the details
+                outcome["failure"] = "unreadable"
                 log.exception("run %s failed", run_dir.name)
                 _update(run_dir, status="failed", error=FAILED)
                 raise jobs.RunError(FAILED[0].upper() + FAILED[1:] + ".", 422)
+            finally:
+                _record(run_dir, "deck_run", mode=mode, seconds=round(time.monotonic() - began, 1),
+                        matching="claude" if config.USE_LLM else "keywords", requests=tokens.requests,
+                        **tokens.counts, **outcome)
         _update(run_dir, status="done", copy_icons=None if mode == "suggest" else len(result["picks"]))
         return result
     finally:
@@ -244,27 +262,30 @@ def _send_command(path: str, url: str) -> str:
 
 
 def _new_run(mode: str = "replace", slides: str = "", attached_deck: str = "", allow_filled: bool = False,
-             source: str = "claude") -> dict:
-    """A new run, waiting for its deck. source: who started it, Claude (start_icon_run) or the web page (web.py)."""
+             source: str = "claude", app: str = "", person: str = "") -> dict:
+    """A new run, waiting for its deck. source: who started it, Claude (start_icon_run) or the web page (web.py);
+    app: the Claude app, for usage; person: who signed in on the web page (Claude runs have no sign-in)."""
     _cleanup()
     run_id = uuid.uuid4().hex[:12]
     run_dir = config.WORK_DIR / run_id
     run_dir.mkdir(parents=True)
     now = time.time()
     # attached: the deck Claude sends from the chat, by the name it will arrive with; ready once it has (_attach)
-    return _write(run_dir, {
-        "id": run_id, "token": secrets.token_urlsafe(24), "source": source, "mode": mode,
-        "allow_filled": allow_filled, "status": "waiting", "error": "",
+    run = _write(run_dir, {
+        "id": run_id, "token": secrets.token_urlsafe(24), "source": source, "app": app, "person": person,
+        "mode": mode, "allow_filled": allow_filled, "status": "waiting", "error": "",
         "slides": [int(s) for s in slides.split(",") if s.strip()] or None, "deck_file": "", "copy_icons": None,
         "attached": {"name": _deck_name(re.split(r"[\\/]", attached_deck)[-1]), "ready": False}
         if attached_deck else None,
         "created": now, "expires": now + IDLE_S})
+    usage.record("run_started", run, attached=bool(attached_deck))
+    return run
 
 
 def _start_web_run(email: str) -> str:
     """The web page's Start (web.py), for the person signed in there: a new run in replace mode, filled icons off (the
     designer can change both on the page). Returns its private link."""
-    run = _new_run(source="web")
+    run = _new_run(source="web", app="Web page", person=email.lower())
     log.info("run %s started from the web page by %s", run["id"], email)
     return _link(run)
 
@@ -296,7 +317,7 @@ def start_icon_run(mode: Literal["replace", "add", "suggest"] = "replace", slide
     if attached_deck and not attached_deck.lower().endswith(".pptx"):
         raise ToolError("attached_deck: the path of the attached .pptx (a .ppt must be saved as .pptx in PowerPoint "
                         "first), or empty")
-    run = _new_run(mode, slides, attached_deck, allow_filled)
+    run = _new_run(mode, slides, attached_deck, allow_filled, app=usage.client_app())
     run_id, link = run["id"], _link(run)
     told = {"run_id": run_id, "status": "waiting", "link": link, "link_expires": f"after {IDLE} unused",
             "next": "The Prezlab Icons panel shows with this result in Claude web, desktop and mobile: tell the designer "
@@ -361,6 +382,7 @@ async def choose_icons(run_id: str, choices: dict[str, str] | None = None, picks
     except jobs.RunError as e:
         raise ToolError(str(e))
     _update(run_dir, copy_icons=result["added"])
+    _record_added(run_dir, run, "chat", picks, chosen, result)
     return {"run_id": run_id, "icons_in_copy": result["added"], "download": _link(run, "jobs", run_id, "download"),
             "not_added": [f"{i}: no longer approved in the library" for i in result["skipped"]],
             "warnings": result["warnings"],
@@ -386,6 +408,9 @@ def search_icons(query: str, limit: int = 10, include_filled: bool = False) -> d
     for style in sorted(styles):
         found += [i.id for i in lib.search(query, style, arabic, limit)]
     icons = [icon for i in dict.fromkeys(found) if (icon := lib.get(i)) and icon.style in styles][:limit]
+    # usage: the words only when nothing matched (a gap in the library), cut short
+    usage.record("search", {"source": "claude", "app": usage.client_app()}, via="chat", results=len(icons),
+                 query="" if icons else usage.clean(" ".join(query.split()), usage.QUERY_CHARS))
     return {"query": query,
             "icons": [{"icon": i.id, "style": i.style, "family": i.family, "draws": i.description,
                        "keywords": i.tags[:8]} for i in icons],
@@ -577,6 +602,7 @@ async def _attach(request: Request, run_dir: Path, run: dict) -> Response:
         log.exception("run %s: saving the attached deck failed", run["id"])
         raise jobs.RunError("The deck didn't save. Try again.", 500)
     _update(run_dir, attached={"name": name, "ready": True})
+    _record(run_dir, "deck_attached")
     return JSONResponse({"deck": name, "next": "The deck is in the Prezlab Icons panel (and at the run's link): "
                                                "tell the designer in one line to check the mode and click Run there."})
 
@@ -632,7 +658,21 @@ async def _apply(request: Request, run_dir: Path, run: dict) -> Response:
         raise jobs.RunError("Run the deck first.")
     result = await anyio.to_thread.run_sync(jobs.apply, run_dir, _library(), picks, choices)
     _update(run_dir, copy_icons=result["added"])
+    _record_added(run_dir, run, "page", picks, choices, result)
     return JSONResponse({**result, "download": f"jobs/{run['id']}/download"})
+
+
+def _record_added(run_dir: Path, run: dict, via: str, picks: list[int], choices: dict[int, str], result: dict):
+    """Usage: a copy made with the designer's picks and choices, in the page or from the chat. The icons are the
+    library ones the designer chose (their own uploads only counted), and in suggest mode the suggestions they added."""
+    from_library = [v for v in choices.values() if jobs.upload_path(run_dir, v) is None]
+    icons = list(from_library)
+    if run["mode"] == "suggest":
+        offered = jobs.saved(run_dir)["picks"]
+        icons += [offered[n]["icon"]["id"] for n in sorted(set(picks)) if 0 <= n < len(offered)]
+    _record(run_dir, "icons_added", via=via, picks=len(set(picks)), chosen=len(choices),
+            uploads=len(choices) - len(from_library), warnings=len(result["warnings"]), in_copy=result["added"],
+            icons=icons)
 
 
 async def _upload_icon(request: Request, run_dir: Path, run: dict) -> Response:
@@ -681,6 +721,7 @@ async def _download(request: Request, run_dir: Path, run: dict) -> Response:
     out = jobs.output(run_dir)
     if out is None:
         raise jobs.RunError("There's no copy yet: add icons first.", 404)
+    _record(run_dir, "download")
     return FileResponse(out, filename=out.name)
 
 
@@ -756,18 +797,38 @@ def _log_handshake(body: bytes, headers: dict) -> None:
     clean = lambda v: re.sub(r"[^\w .:/()+;,=-]", "?", str(v))[:120]   # one plain line, whatever a client sends
     ui = extensions.get(next(iter(UI_EXTENSION)))
     types = ui.get("mimeTypes") if isinstance(ui, dict) and isinstance(ui.get("mimeTypes"), list) else []
+    agent = headers.get(b"user-agent", b"?").decode("latin-1")
     log.info("client connected: %s %s, protocol %s, extensions: %s, can show the panel: %s, user agent: %s",
              clean(client.get("name", "?")), clean(client.get("version", "?")), clean(params.get("protocolVersion", "?")),
              clean(", ".join(map(str, extensions)) or "none"),
-             f"yes ({clean(', '.join(map(str, types)))})" if ui is not None else "no",
-             clean(headers.get(b"user-agent", b"?").decode("latin-1")))
+             f"yes ({clean(', '.join(map(str, types)))})" if ui is not None else "no", clean(agent))
+    usage.saw_client(client.get("name", "?"), agent, ui is not None)
+
+
+CLIENT_INFO = "io.modelcontextprotocol/clientInfo"   # newer protocol versions: the client's name in each request's _meta
+
+
+def _client_name(body: bytes) -> str:
+    """The Claude app's own name in an MCP request: the handshake's clientInfo, or on newer protocol versions the
+    request's _meta. Empty when the request doesn't say (tool calls on the handshake versions)."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return ""
+    if not isinstance(message, dict):   # a batch: no name to go by
+        return ""
+    params = message.get("params") if isinstance(message.get("params"), dict) else {}
+    meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+    info = params.get("clientInfo") if message.get("method") == "initialize" else meta.get(CLIENT_INFO)
+    return usage.clean(info.get("name"), 60) if isinstance(info, dict) else ""
 
 
 class DeclareApps:
     """Claude mounts a panel only for a server that declares the MCP Apps extension when it connects. The SDK keeps
     capabilities.extensions for the newest protocol and sieves it out on the handshake versions Claude connects with,
     so the declaration goes back into the initialize result here (JSON responses: json_response=True). The request
-    side of each handshake is logged (_log_handshake)."""
+    side of each handshake is logged (_log_handshake), and every request carries its Claude app to the tools, for
+    usage (usage.mcp_request)."""
 
     def __init__(self, app, path: str):
         self.app, self.path = app, path.rstrip("/")
@@ -777,13 +838,16 @@ class DeclareApps:
             await self.app(scope, receive, send)
             return
         start, chunks, request = None, [], []
+        headers = dict(scope.get("headers") or [])
 
         async def read():
             message = await receive()
             if message["type"] == "http.request":
                 request.append(message.get("body", b""))
                 if not message.get("more_body"):
-                    _log_handshake(b"".join(request), dict(scope.get("headers") or []))
+                    body = b"".join(request)
+                    _log_handshake(body, headers)
+                    holder["client"] = _client_name(body)
             return message
 
         async def declare(message):
@@ -804,7 +868,8 @@ class DeclareApps:
             else:
                 await send(message)
 
-        await self.app(scope, read, declare)
+        with usage.mcp_request(headers.get(b"user-agent", b"").decode("latin-1")) as holder:
+            await self.app(scope, read, declare)
 
 
 def build_app(mode: str | None = None):
@@ -832,6 +897,9 @@ def build_app(mode: str | None = None):
         web.check()
         server.custom_route(web.PATH, ["GET", "POST"])(web.endpoint(_start_web_run))
         server.custom_route("/", ["GET"])(_home)
+        if usage_page.enabled():   # usage, for the tool's owners (ICON_USAGE_ADMINS), signed in on the web page
+            server.custom_route(web.USAGE_PATH, ["GET"])(usage_page.page)
+            server.custom_route(web.USAGE_PATH + ".csv", ["GET"])(usage_page.export)
     local =["127.0.0.1", "127.0.0.1:*", "localhost", "localhost:*"]
     security = TransportSecuritySettings(   # Host and Origin checks against DNS rebinding
         enable_dns_rebinding_protection=True, allowed_hosts=[url.netloc, *local],
