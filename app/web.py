@@ -226,11 +226,18 @@ def _code_page(login: str, error: str = "", status: int = 200) -> Response:
         '<button class="link">Start again with a different account</button></small></p></form>', status)
 
 
+def is_usage_admin(user: dict | None) -> bool:
+    """One of the tool's owners (ICON_USAGE_ADMINS), who may see the usage page (usage_page.py)."""
+    return bool(user) and user["email"].lower() in config.USAGE_ADMINS
+
+
 def _start_page(user: dict) -> Response:
+    usage = (f'<a class="button secondary" href="{USAGE_PATH}">View usage</a>'   # owners only; the page checks too
+             if is_usage_admin(user) else "")
     return pages.render(
         f"<h1>Place icons in a deck</h1><p>Signed in as {html.escape(user['name'])}.</p>"
         '<form method="post"><input type="hidden" name="start" value="1">'
-        '<button data-busy="Opening…">Start with a deck</button></form>'
+        f'<button data-busy="Opening…">Start with a deck</button></form>{usage}'
         "<p><small>Each start opens a private page for your deck, where you can run it again with changes. The deck "
         "and its copy are deleted as soon as you leave or refresh that page, so download the copy first. In "
         "PowerPoint, save the deck before you upload it.</small></p>"

@@ -197,8 +197,17 @@ def test_the_usage_page_is_for_its_owners_only(env, owners):
     with client() as c:
         sign_in(c, "twofa@prezlab.com")
         c.post(WEB, data={"code": "123456"})
-        assert c.get(web.USAGE_PATH).status_code == 403
+        assert "Start with a deck" in c.get(WEB).text and "View usage" not in c.get(WEB).text   # no button
+        assert c.get(web.USAGE_PATH).status_code == 403                                        # nor the page
         assert c.get(web.USAGE_PATH + ".csv").status_code == 403
+
+
+def test_owners_see_a_usage_button_on_the_web_page(env, owners):
+    with client() as c:
+        sign_in(c, "DESIGNER@prezlab.com")
+        start_page = c.get(WEB).text
+        assert "Start with a deck" in start_page and f'href="{web.USAGE_PATH}">View usage</a>' in start_page
+        assert c.get(web.USAGE_PATH).status_code == 200
 
 
 def test_the_usage_page_is_off_without_owners(env, fake_odoo, monkeypatch):

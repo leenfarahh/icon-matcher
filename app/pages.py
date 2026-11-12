@@ -61,6 +61,8 @@ input::placeholder { color: var(--slate); opacity: .7; }
   padding: 12px 20px; border: 0; border-radius: 999px; background: var(--teal); color: var(--shell); font: inherit;
   font-weight: 600; letter-spacing: -0.02em; text-decoration: none; cursor: pointer; }
 .button:hover, button:hover { background: var(--teal-700); }
+.button.secondary { margin-top: 12px; background: transparent; color: var(--teal); box-shadow: inset 0 0 0 1px var(--line); }
+.button.secondary:hover { background: rgba(182, 237, 243, .4); }
 button:disabled, button:disabled:hover { background: var(--teal-700); opacity: .75; cursor: progress; }
 button.link { display: inline; width: auto; margin: 0; padding: 0; background: none; color: inherit; font-weight: 500;
   letter-spacing: inherit; text-decoration: underline; text-underline-offset: 2px; }

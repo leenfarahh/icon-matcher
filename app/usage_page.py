@@ -28,7 +28,7 @@ def _admin(request: Request) -> tuple[dict | None, Response | None]:
     user = web.signed_in(request)
     if user is None:
         return None, RedirectResponse(f"{web.PATH}?to={web.TO_USAGE}", 303, headers=pages.PRIVATE)
-    if user["email"].lower() not in config.USAGE_ADMINS:
+    if not web.is_usage_admin(user):
         return None, pages.render(
             f"<h1>Usage is for the tool's owners</h1><p>You're signed in as {html.escape(user['email'])}, which isn't "
             "on the list for this page. The tool's owner can add you (ICON_USAGE_ADMINS).</p>"
