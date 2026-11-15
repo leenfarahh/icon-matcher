@@ -102,9 +102,13 @@ icons never mixes them.
 Always a theme slot (accent1-6, tx1/bg1, tx2/bg2), resolved through each slide's own master, and bound in
 the SVG with PowerPoint's `MsftOfcThm_*` classes so icons follow the theme. The deck color is the theme slot
 the deck's existing icons use when at least two thirds agree (read from SVG theme classes, SVG paint, PNG
-pixels or native shapes), else accent1. Per icon set, against what is behind the icon (slide background,
-layout/master decorations and every filled shape under it, transparency blended): the deck color at 3:1 or
-more, else the label's own text color at 2:1 or more, else the theme's dark/light color at 3:1. The
+pixels or native shapes), else accent1. Per icon set, against what is behind the icon, read at nine points
+over its box (slide background, layout/master decorations and every filled shape and picture under each point,
+transparency blended; a gradient by its color at that point, a picture by its pixels there, a freeform ring's
+hole as see-through): the placeholder's color, else the deck color at 3:1 or more, else the label's own text
+color at 2:1 or more, else the theme's dark/light color at 3:1. A color must also go the right way: lighter
+than a surface whose label is light (or, label unknown, where white stands out more than black), darker than
+one whose label is dark, so a black icon never lands on a dark header just because it reaches 3:1. The
 report's Color column says which and why. Icons keep their proportions when inserted.
 
 ## Items and placement (app/deck.py, app/placement.py)

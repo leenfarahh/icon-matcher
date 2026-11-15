@@ -1,15 +1,22 @@
 """Icon colors, always from the deck's theme, chosen per icon for contrast with what sits behind it.
 
 Every color is a theme slot (accent1, tx1, bg1, ...), resolved to hex through the slide master's color map
-and theme, so the inserted SVG can be bound to the slot. What sits behind an icon is the slide background
-with every filled shape under the icon's center composited on top in z-order, so a 15%-opacity card counts
-as the pale tint it shows (groups included). Then, per icon set (a row of cards shares one color):
-  1. the deck color, if it has at least 3:1 contrast (the WCAG minimum for graphics);
-  2. else the label's own text color, if it reaches 2:1 (the designer already uses it there for text);
-  3. else the theme's dark or light colors at 3:1; failing all, the best of them, flagged in the note."""
+and theme, so the inserted SVG can be bound to the slot. What sits behind an icon is read at nine points over
+its box: the slide background with every filled shape and picture under each point composited on top in
+z-order, so a 15%-opacity card counts as the pale tint it shows (groups included), a gradient counts as the
+color it has there (a dark badge with a light rim is dark in the middle) and a picture as its pixels there.
+Then, per icon set (a row of cards shares one color), the first that reads on all of it:
+  1. the placeholder's color, when the designer colored the PL logo placeholders;
+  2. the deck color, if it has at least 3:1 contrast (the WCAG minimum for graphics);
+  3. else the label's own text color, if it reaches 2:1 (the designer already uses it there for text);
+  4. else the theme's dark or light colors at 3:1; failing all, the best of them, flagged in the note.
+Reading also means going the right way: a light icon where the label is light (or, label unknown, where white
+stands out more than black), a dark one where it is dark, so black never lands on a dark header just because
+it reaches 3:1."""
 import colorsys
 import math
 import re
+import weakref
 from collections import Counter, defaultdict
 
 from lxml import etree
@@ -99,13 +106,24 @@ def _blend(top: str, bottom: str, alpha: float) -> str:
                                   for i in (0, 2, 4))
 
 
+def _lum(hexv: str) -> float:
+    """WCAG relative luminance."""
+    c = [int(hexv[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    c = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
 def contrast(hex_a: str, hex_b: str) -> float:
-    def lum(hexv):
-        c = [int(hexv[i:i + 2], 16) / 255 for i in (0, 2, 4)]
-        c = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
-        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
-    a, b = sorted((lum(hex_a), lum(hex_b)), reverse=True)
+    a, b = sorted((_lum(hex_a), _lum(hex_b)), reverse=True)
     return (a + 0.05) / (b + 0.05)
+
+
+def wants_light(bg: str, label: str | None = None) -> bool:
+    """Does an icon on this color go lighter than it? The way its label goes when the label reads on it (a white
+    heading on a teal header takes a white icon), else whichever of white and black stands out more on it."""
+    if label and contrast(label, bg) >= LABEL_MIN_CONTRAST:
+        return _lum(label) > _lum(bg)
+    return contrast("FFFFFF", bg) > contrast("000000", bg)
 
 
 def _fill(theme, props, group_fill=None):
@@ -285,9 +303,9 @@ def find_shape(shapes, shape_id):
     return next((s for s in leaves(shapes) if s.shape_id == shape_id), None)
 
 
-def boxes(theme, shapes, tf=(0.0, 0.0, 1.0, 1.0), group_fill=None):
-    """(left, top, right, bottom) in EMU, fill, and shape for every shape in z-order; group children on
-    slide coordinates."""
+def _frames(theme, shapes, tf=(0.0, 0.0, 1.0, 1.0), group_fill=None):
+    """Every shape that isn't a group, in z-order: ((left, top, width, height) in slide EMU before its own
+    rotation, its rotation, the fill its group passes down, the shape)."""
     ox, oy, sx, sy = tf
     for sh in shapes:
         if sh.left is None or sh.width is None:
@@ -295,19 +313,210 @@ def boxes(theme, shapes, tf=(0.0, 0.0, 1.0, 1.0), group_fill=None):
         x, y, w, h = ox + sh.left * sx, oy + sh.top * sy, sh.width * sx, sh.height * sy
         if sh.shape_type == MSO_SHAPE_TYPE.GROUP:
             own = _fill(theme, sh._element.grpSpPr, group_fill)
-            yield from boxes(theme, sh.shapes, _child_tf(sh, x, y, w, h, tf), group_fill if own is _UNSET else own)
+            yield from _frames(theme, sh.shapes, _child_tf(sh, x, y, w, h, tf), group_fill if own is _UNSET else own)
         else:
-            x, y, w, h = rotated_box(x, y, w, h, getattr(sh, "rotation", 0) or 0)
-            yield (x, y, x + w, y + h), _shape_fill(theme, sh._element, group_fill), sh
+            yield (x, y, w, h), getattr(sh, "rotation", 0) or 0, group_fill, sh
 
 
-def _slide_background(theme, slide):
-    """Hex or IMAGE: the slide's background, else its layout's, else its master's, else bg1."""
+def boxes(theme, shapes, tf=(0.0, 0.0, 1.0, 1.0), group_fill=None):
+    """(left, top, right, bottom) in EMU, fill, and shape for every shape in z-order; group children on
+    slide coordinates."""
+    for (x, y, w, h), rotation, passed, sh in _frames(theme, shapes, tf, group_fill):
+        x, y, w, h = rotated_box(x, y, w, h, rotation)
+        yield (x, y, x + w, y + h), _shape_fill(theme, sh._element, passed), sh
+
+
+FILLS = {"noFill", "solidFill", "gradFill", "pattFill", "blipFill", "grpFill"}
+R_EMBED = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed"
+_rasters = weakref.WeakKeyDictionary()   # image part -> small RGBA copy (None: unreadable), for the deck's lifetime
+
+
+def _local(frame, rotation, el, x, y):
+    """A slide point as shares of a shape's own frame (0 to 1 across and down), its rotation and flips undone."""
+    fx, fy, fw, fh = frame
+    if rotation:
+        cx, cy, a = fx + fw / 2, fy + fh / 2, math.radians(-rotation)
+        dx, dy = x - cx, y - cy
+        x, y = cx + dx * math.cos(a) - dy * math.sin(a), cy + dx * math.sin(a) + dy * math.cos(a)
+    u, v = (x - fx) / (fw or 1), (y - fy) / (fh or 1)
+    xfrm = el.find("p:spPr/a:xfrm", NS)
+    if xfrm is not None:
+        u = 1 - u if xfrm.get("flipH") in ("1", "true") else u
+        v = 1 - v if xfrm.get("flipV") in ("1", "true") else v
+    return u, v
+
+
+def _gradient_at(theme, grad, u, v):
+    """(hex, opacity) a gradient paints at a point of its shape (u, v as shares of its frame), or None without
+    stops. A linear gradient runs along its angle; a radial or rectangular one runs out from its focus (first stop)
+    to the frame's corners. Averaging the stops instead misreads a dark badge with a light rim as pale."""
+    stops = sorted(((int(gs.get("pos", "0")) / 100000, theme.color(gs[0])) for gs in grad.findall("a:gsLst/a:gs", NS)
+                    if len(gs)), key=lambda s: s[0])
+    if not stops:
+        return None
+    path = grad.find("a:path", NS)
+    if path is not None:
+        rect = path.find("a:fillToRect", NS)
+        l, t, r, b = ((int(rect.get(k, "0")) / 100000 if rect is not None else 0.0) for k in "ltrb")
+        x0, x1, y0, y1 = l, 1 - r, t, 1 - b   # the focus
+        dx = (x0 - u) / x0 if u < x0 and x0 > 0 else ((u - x1) / (1 - x1) if u > x1 and x1 < 1 else 0.0)
+        dy = (y0 - v) / y0 if v < y0 and y0 > 0 else ((v - y1) / (1 - y1) if v > y1 and y1 < 1 else 0.0)
+        pos = math.hypot(dx, dy) / math.sqrt(2) if path.get("path") == "circle" else max(dx, dy)
+    else:
+        lin = grad.find("a:lin", NS)
+        a = math.radians(int(lin.get("ang", "0")) / 60000 if lin is not None else 0)
+        c, s = math.cos(a), math.sin(a)
+        pos = 0.5 + ((u - 0.5) * c + (v - 0.5) * s) / ((abs(c) + abs(s)) or 1)
+    pos = min(1.0, max(0.0, pos))
+    if pos <= stops[0][0] or len(stops) == 1:
+        return stops[0][1][0], stops[0][1][2]
+    for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
+        if pos <= p1:
+            k = (pos - p0) / (p1 - p0) if p1 > p0 else 1.0
+            return _blend(c1[0], c0[0], k), c0[2] + (c1[2] - c0[2]) * k
+    return stops[-1][1][0], stops[-1][1][2]
+
+
+def _raster(part):
+    """A small RGBA copy of an image part, or None when it can't be read (a metafile, say)."""
+    if part not in _rasters:
+        from io import BytesIO
+        from PIL import Image
+        try:
+            im = Image.open(BytesIO(part.blob))
+            im.draft("RGB", (256, 256))   # a JPEG decodes at a reduced size
+            im = im.convert("RGBA")
+            im.thumbnail((128, 128))
+        except Exception:   # Pillow raises many kinds for formats it can't read
+            im = None
+        _rasters[part] = im
+    return _rasters[part]
+
+
+def _picture_at(part, blip_fill, u, v):
+    """(hex, opacity) a picture shows at a point of its frame (u, v as shares of it), cropping and transparency
+    applied: its pixels around that point, averaged. None where it is see-through or cropped away; IMAGE when it
+    can't be read."""
+    blip = blip_fill.find("a:blip", NS) if blip_fill is not None else None
+    try:
+        im = _raster(part.related_part(blip.get(R_EMBED)))
+    except (AttributeError, KeyError, TypeError):
+        im = None
+    if im is None:
+        return IMAGE
+    crop = blip_fill.find("a:srcRect", NS)
+    l, t, r, b = ((int(crop.get(k, "0")) / 100000 if crop is not None else 0.0) for k in "ltrb")
+    fx, fy = l + u * (1 - l - r), t + v * (1 - t - b)
+    if not (0 <= fx <= 1 and 0 <= fy <= 1):
+        return None
+    w, h = im.size
+    x, y, k = min(w - 1, int(fx * w)), min(h - 1, int(fy * h)), max(1, round(0.02 * max(w, h)))
+    px = [im.getpixel((i, j)) for i in range(max(0, x - k), min(w, x + k + 1))
+          for j in range(max(0, y - k), min(h, y + k + 1))]
+    weight = sum(p[3] for p in px)
+    fix = blip.find("a:alphaModFix", NS)
+    alpha = weight / (255 * len(px)) * (int(fix.get("amt", "100000")) / 100000 if fix is not None else 1.0)
+    if alpha <= 0.02:
+        return None
+    return "%02X%02X%02X" % tuple(round(sum(p[c] * p[3] for p in px) / weight) for c in range(3)), alpha
+
+
+def _bezier(ctrl, t):
+    while len(ctrl) > 1:
+        ctrl = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t) for a, b in zip(ctrl, ctrl[1:])]
+    return ctrl[0]
+
+
+def _outlines(path) -> list[list[tuple]]:
+    """A freeform path's subpaths as polygons in its own coordinates, curves and arcs flattened. Raises
+    ValueError or TypeError on formula-driven points (guide names), which aren't read."""
+    polys, cur, pos = [], [], (0.0, 0.0)
+    for cmd in path:
+        kind = _name(cmd)
+        pts = [(float(p.get("x")), float(p.get("y"))) for p in cmd.findall("a:pt", NS)]
+        if kind in ("moveTo", "close"):
+            if len(cur) > 2:
+                polys.append(cur)
+            pos = pts[0] if kind == "moveTo" else (cur[0] if cur else pos)
+            cur = [pos] if kind == "moveTo" else []
+            continue
+        cur = cur or [pos]
+        if kind == "lnTo":
+            cur.append(pts[0])
+        elif kind in ("cubicBezTo", "quadBezTo"):
+            cur += [_bezier([pos] + pts, i / 8) for i in range(1, 9)]
+        elif kind == "arcTo":
+            wr, hr = float(cmd.get("wR")), float(cmd.get("hR"))
+            st, sw = math.radians(float(cmd.get("stAng")) / 60000), math.radians(float(cmd.get("swAng")) / 60000)
+            cx, cy = pos[0] - wr * math.cos(st), pos[1] - hr * math.sin(st)
+            cur += [(cx + wr * math.cos(st + sw * i / 12), cy + hr * math.sin(st + sw * i / 12)) for i in range(1, 13)]
+        pos = cur[-1]
+    if len(cur) > 2:
+        polys.append(cur)
+    return polys
+
+
+def _in_freeform(el, u, v) -> bool:
+    """Is a point (shares of the shape's frame) on a freeform's filled area? Even-odd, as PowerPoint fills it, so
+    the hole of a ring drawn as one freeform is not. True when the outline can't be read (its box stands in)."""
+    ext = el.find("p:spPr/a:xfrm/a:ext", NS)
+    paths = el.findall("p:spPr/a:custGeom/a:pathLst/a:path", NS)
+    try:
+        for path in paths:
+            if path.get("fill") == "none":
+                continue
+            x, y = u * float(path.get("w") or ext.get("cx")), v * float(path.get("h") or ext.get("cy"))
+            inside = False
+            for poly in _outlines(path):
+                for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]):
+                    if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                        inside = not inside
+            if inside:
+                return True
+    except (AttributeError, IndexError, TypeError, ValueError):
+        return True
+    return not paths
+
+
+def _paint_at(theme, frame, rotation, passed, sh, x, y):
+    """What a shape paints at a slide point (EMU): (hex, opacity); None (no fill, or the point is outside its
+    outline); or IMAGE (a picture that can't be read). Gradients and pictures are read where the point is."""
+    el = sh._element
+    kind = _name(el)
+    if kind not in ("sp", "pic"):            # lines, tables, charts: not treated as a background
+        return None
+    l, t, w, h = rotated_box(*frame, rotation)
+    geom = geometry(sh)
+    if not inside_outline(geom, rotation, (l, t, l + w, t + h), x, y):
+        return None
+    u, v = _local(frame, rotation, el, x, y)
+    if geom == "custom" and not _in_freeform(el, u, v):
+        return None
+    if kind == "pic":
+        return _picture_at(sh.part, el.find("p:blipFill", NS), u, v)
+    props = el.find("p:spPr", NS)
+    fill = next((c for c in (props if props is not None else []) if _name(c) in FILLS), None)
+    if fill is not None and _name(fill) == "gradFill":
+        return _gradient_at(theme, fill, u, v)
+    if fill is not None and _name(fill) == "blipFill":
+        return _picture_at(sh.part, fill, u, v)
+    return _shape_fill(theme, el, passed)
+
+
+def _background_at(theme, slide, x, y):
+    """Hex or IMAGE at a slide point (EMU): the slide's background, else its layout's, else its master's, else
+    bg1. A gradient or picture background is read where the point is."""
+    pres = slide.part.package.presentation_part.presentation
+    u, v = x / (pres.slide_width or 1), y / (pres.slide_height or 1)
     for part in (slide, slide.slide_layout, slide.slide_layout.slide_master):
         bg = part._element.find("p:cSld/p:bg", NS)
         if bg is None:
             continue
-        f = _fill(theme, bg.find("p:bgPr", NS))
+        props = bg.find("p:bgPr", NS)
+        fill = next((c for c in (props if props is not None else []) if _name(c) in FILLS), None)
+        kind = _name(fill) if fill is not None else None
+        f = (_gradient_at(theme, fill, u, v) if kind == "gradFill" else
+             _picture_at(part.part, fill, u, v) if kind == "blipFill" else _fill(theme, props))
         if f == IMAGE:
             return IMAGE
         if f is not _UNSET and f is not None:
@@ -331,27 +540,48 @@ def layers(slide) -> list[tuple[list, bool]]:
     return out
 
 
-def behind(theme, slide, x_in, y_in, ignore=()):
-    """(hex or IMAGE, what it is) at a point: the background with every filled shape under the point
-    composited on top in z-order. `ignore`: ids of the slide's own shapes to leave out (a placeholder the icon
-    replaces)."""
-    x, y = x_in * EMU, y_in * EMU
-    color, where = _slide_background(theme, slide), "the slide background"
-    drawn = [entry for shapes, own in layers(slide) for entry in boxes(theme, shapes)
-             if not (own and entry[2].shape_id in ignore)]
-    for (l, t, r, b), fill, _ in drawn:
-        if fill is None or not (l <= x <= r and t <= y <= b):
+def _surfaces(theme, slide, ignore=()):
+    """What draws on a slide, back to front, as _frames entries. `ignore`: ids of the slide's own shapes to leave
+    out (a placeholder the icon replaces)."""
+    return [e for shapes, own in layers(slide) for e in _frames(theme, shapes) if not (own and e[3].shape_id in ignore)]
+
+
+def _color_at(theme, slide, surfaces, x, y):
+    """(hex or IMAGE, what it is) at a slide point (EMU): the background with every filled shape and picture
+    under the point composited on top in z-order."""
+    color, where = _background_at(theme, slide, x, y), "the slide background"
+    for frame, rotation, passed, sh in surfaces:
+        paint = _paint_at(theme, frame, rotation, passed, sh, x, y)
+        if paint is None:
             continue
-        if fill == IMAGE:
+        if paint == IMAGE:
             color, where = IMAGE, "a picture"
             continue
-        hexv, alpha = fill
+        hexv, alpha = paint
         if alpha >= 0.999 or (color == IMAGE and alpha >= 0.5):  # mostly opaque over a picture: the fill dominates
             color = hexv
         elif color != IMAGE:
             color = _blend(hexv, color, alpha)
-        where = "the shape behind it"
+        where = "a picture" if _name(sh._element) == "pic" else "the shape behind it"
     return color, where
+
+
+def behind(theme, slide, x_in, y_in, ignore=()):
+    """(hex or IMAGE, what it is) at a point (inches): the background with every filled shape and picture under
+    the point composited on top in z-order. `ignore`: ids of the slide's own shapes to leave out (a placeholder
+    the icon replaces)."""
+    return _color_at(theme, slide, _surfaces(theme, slide, ignore), x_in * EMU, y_in * EMU)
+
+
+SAMPLES = (0.2, 0.5, 0.8)   # where across and down an icon's box its background is read (its drawing, not corners)
+
+
+def behind_icon(theme, slide, left, top, size, ignore=()):
+    """(hex or IMAGE, what it is) under each part of an icon's box (inches): a 3x3 grid over where its drawing
+    is, so an icon on a badge, a gradient or a photo is judged on all it covers, not one point."""
+    surfaces = _surfaces(theme, slide, ignore)
+    return [_color_at(theme, slide, surfaces, (left + size * a) * EMU, (top + size * b) * EMU)
+            for b in SAMPLES for a in SAMPLES]
 
 
 NEAR = 40               # RGB distance within which an existing icon's color counts as a theme color
@@ -415,10 +645,10 @@ def _pixel_colors(blob) -> Counter:
     return Counter("%02X%02X%02X" % p[:3] for p in px)
 
 
-def text_slot(theme, slide, item) -> str | None:
-    """The theme slot of the item's text color, when the slide sets one: the run's color, else the box's list
-    style, else the shape style's font color. None when it's inherited from the master (not read) or isn't a
-    theme color, so an assumed color never counts as the designer's choice."""
+def text_color(theme, slide, item) -> tuple[str, str | None] | None:
+    """(hex, theme slot or None) of the item's text color, when the slide sets one: the run's color, else the
+    box's list style, else the shape style's font color. None when it's inherited from the master (not read), so
+    an assumed color never counts as the designer's choice."""
     shape = find_shape(slide.shapes, item.shape_id)
     if shape is None or not shape.has_text_frame:
         return None
@@ -430,29 +660,41 @@ def text_slot(theme, slide, item) -> str | None:
         shape._element.find("p:style/a:fontRef", NS)]
     for el in sources:
         if el is not None and len(el):
-            return theme.color(el[0])[1]
+            hexv, slot, _ = theme.color(el[0])
+            return hexv, slot
     return None
+
+
+def text_slot(theme, slide, item) -> str | None:
+    """The theme slot of the item's text color (text_color), or None when it isn't set or isn't a theme color."""
+    found = text_color(theme, slide, item)
+    return found[1] if found else None
 
 
 def assign(prs, picks, default_slot: str = "accent1") -> None:
     """Set color_slot, color_hex and color_note on each pick. Icons in one set share one color, unless the
-    designer colored the set's labels differently per background: then each icon matches its own label."""
+    designer colored the set's labels differently per background: then each icon matches its own label.
+
+    A color reads on a background when it has the contrast and goes the way a designer would: lighter than a
+    surface that takes a light icon (its label is light there, or white stands out more than black), darker than
+    one that takes a dark icon. So black on a dark teal header loses to white even where it reaches 3:1."""
     themes = {}
     sets = defaultdict(list)
     for p in picks:
         sets[p.item.set_id or f"solo-{id(p)}"].append(p)
     for members in sets.values():
-        seen = []  # (pick, background hex or IMAGE, what it is, text slot)
+        seen = []  # (pick, [(background hex or IMAGE, what it is)] under the icon, label's (hex, slot) or None)
         for p in members:
             slide = prs.slides[p.item.slide - 1]
             master = slide.slide_layout.slide_master
             theme = themes.setdefault(id(master), Theme(master))
             ignore = set(p.item.placeholder["ids"]) if p.item.placeholder else ()   # the logo the icon replaces
-            bg, where = behind(theme, slide, p.left + p.size / 2, p.top + p.size / 2, ignore)
-            seen.append((p, bg, where, text_slot(theme, slide, p.item)))
-        known = [(bg, where) for _, bg, where, _ in seen if bg != IMAGE]
-        labels = [s for *_, s in seen if s in THEME_CLASS and s != default_slot]
-        # The designer colored the placeholders: their theme color comes first, when it has the contrast.
+            seen.append((p, behind_icon(theme, slide, p.left, p.top, p.size, ignore), text_color(theme, slide, p.item)))
+        known = [(bg, where, label[0] if label else None) for _, under, label in seen for bg, where in under
+                 if bg != IMAGE]
+        own = [label[1] if label else None for *_, label in seen]
+        labels = [s for s in own if s in THEME_CLASS and s != default_slot]
+        # The designer colored the placeholders: their theme color comes first, when it reads.
         held = Counter(p.item.placeholder["slot"] for p in members if p.item.placeholder
                        and p.item.placeholder.get("slot") in THEME_CLASS)
         candidates = [(s, MIN_CONTRAST, "the placeholder's color") for s, _ in held.most_common(1)]
@@ -461,35 +703,53 @@ def assign(prs, picks, default_slot: str = "accent1") -> None:
         candidates += [(s, MIN_CONTRAST, "theme dark/light") for s in FALLBACK_SLOTS if s != default_slot]
 
         def worst(slot):
-            return min((contrast(theme.slot_hex(slot), bg), bg, where) for bg, where in known)
+            return min((contrast(theme.slot_hex(slot), bg), bg, where) for bg, where, _ in known)
+
+        def clash(slot):
+            """(background, what it is) where the slot goes the wrong way (dark where the icon should be light, or
+            the reverse), or None."""
+            hexv = theme.slot_hex(slot)
+            return next(((bg, where) for bg, where, label in known
+                         if (_lum(hexv) > _lum(bg)) != wants_light(bg, label)), None)
+
+        def reads(slot, need):
+            return worst(slot)[0] >= need and clash(slot) is None
+
+        def shortfall(slot):
+            ratio, bg, where = worst(slot)
+            if ratio < MIN_CONTRAST:
+                return f"is only {ratio:.1f}:1 on {where} (#{bg})"
+            bg, where = clash(slot)
+            light = _lum(theme.slot_hex(slot)) > _lum(bg)
+            return (f"would be a {'light' if light else 'dark'} icon on {where} (#{bg}), which takes a "
+                    f"{'dark' if light else 'light'} one")
 
         # The designer gave the labels different colors for their backgrounds (white heading on a dark panel,
         # dark heading on a light one): when the deck color doesn't work for all, each icon matches its label.
-        own = [s for *_, s in seen]
-        placeholder_works = held and (not known or worst(candidates[0][0])[0] >= MIN_CONTRAST)
-        if known and not placeholder_works and worst(default_slot)[0] < MIN_CONTRAST and len(set(own)) > 1 \
+        placeholder_works = held and (not known or reads(candidates[0][0], MIN_CONTRAST))
+        if known and not placeholder_works and not reads(default_slot, MIN_CONTRAST) and len(set(own)) > 1 \
                 and all(s in THEME_CLASS for s in own) \
-                and all(bg == IMAGE or contrast(theme.slot_hex(s), bg) >= LABEL_MIN_CONTRAST for _, bg, _, s in seen):
-            for p, bg, where, s in seen:
-                ratio = contrast(theme.slot_hex(s), bg) if bg != IMAGE else None
+                and all(bg == IMAGE or contrast(theme.slot_hex(s), bg) >= LABEL_MIN_CONTRAST
+                        for (_, under, _), s in zip(seen, own) for bg, _ in under):
+            for (p, under, _), s in zip(seen, own):
+                mine = [(contrast(theme.slot_hex(s), bg), bg, where) for bg, where in under if bg != IMAGE]
+                ratio, bg, where = min(mine) if mine else (None, None, None)
                 p.color_slot, p.color_hex = s, theme.slot_hex(s)
                 p.color_note = (f"{s} (matches its label): the labels in this set use different colors for their "
                                 f"backgrounds" + (f"; {ratio:.1f}:1 on {where} (#{bg})" if ratio else ""))
             continue
         if not known:
             slot, why = candidates[0][0], candidates[0][2]
-            note = f"{slot} ({why}): sits on a picture, so contrast wasn't checked"
+            note = f"{slot} ({why}): sits on a picture that can't be read, so contrast wasn't checked"
         else:
-            chosen = next((c for c in candidates if worst(c[0])[0] >= c[1]), None)
+            chosen = next((c for c in candidates if reads(c[0], c[1])), None)
             slot, _, why = chosen or max(candidates, key=lambda c: worst(c[0])[0])
             ratio, bg, where = worst(slot)
             if slot == default_slot or (chosen and why == "the placeholder's color"):
                 note = f"{slot} ({why}): {ratio:.1f}:1 on {where} (#{bg})"
             else:
-                d_ratio, d_bg, d_where = worst(default_slot)
-                note = (f"{slot} ({why}): the deck color {default_slot} is only {d_ratio:.1f}:1 on {d_where} "
-                        f"(#{d_bg}); {slot} is {ratio:.1f}:1")
-                if not chosen:
-                    note += ", still low: check this slide"
+                note = f"{slot} ({why}): the deck color {default_slot} {shortfall(default_slot)}; {slot} is {ratio:.1f}:1"
+            if not chosen:
+                note += ", still low: check this slide"
         for p, *_ in seen:
             p.color_slot, p.color_hex, p.color_note = slot, theme.slot_hex(slot), note

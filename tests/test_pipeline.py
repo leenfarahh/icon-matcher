@@ -545,7 +545,8 @@ def test_see_through_cards_and_plain_black_or_white_text_use_the_theme():
     assert colors.text_slot(theme, prs.slides[0], pick.item) == "bg1"       # plain white text is the theme's bg1
 
 
-def test_mostly_opaque_card_over_a_picture_counts_as_the_card():
+@pytest.mark.parametrize("readable", [True, False])
+def test_a_see_through_card_over_a_picture_blends_with_what_the_picture_shows(readable):
     from io import BytesIO
     from lxml import etree
     from PIL import Image
@@ -556,16 +557,134 @@ def test_mostly_opaque_card_over_a_picture_counts_as_the_card():
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     png = BytesIO()
     Image.new("RGB", (8, 8), (240, 120, 40)).save(png, "PNG")
-    slide.shapes.add_picture(png, Inches(1), Inches(1), Inches(3), Inches(3))          # textured card image
-    for alpha, expected in (("80000", "4F81BD"), ("30000", colors.IMAGE)):
+    pic = slide.shapes.add_picture(png, Inches(1), Inches(1), Inches(3), Inches(3))    # textured card image
+    if not readable:   # a format the tool can't read: a mostly opaque card counts as the card, a tint stays unknown
+        pic.part.related_part(pic._element.blipFill.blip.rEmbed)._blob = b"not an image"
+    cases = ((("80000", colors._blend("4F81BD", "F07828", 0.8)), ("30000", colors._blend("4F81BD", "F07828", 0.3)))
+             if readable else (("80000", "4F81BD"), ("30000", colors.IMAGE)))
+    for alpha, expected in cases:
         card = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(1), Inches(3), Inches(3))
         card.fill.solid()
         card.fill.fore_color.theme_color = MSO_THEME_COLOR.ACCENT_1
         clr = card._element.find(".//{http://schemas.openxmlformats.org/drawingml/2006/main}schemeClr")
         etree.SubElement(clr, "{http://schemas.openxmlformats.org/drawingml/2006/main}alpha", val=alpha)
         theme = colors.Theme(prs.slide_masters[0])
-        assert colors.behind(theme, slide, 2, 2)[0] == expected   # 80% opaque reads as accent1; a 30% tint stays unknown
+        assert colors.behind(theme, slide, 2, 2) == (expected, "the shape behind it")
         card._element.getparent().remove(card._element)
+    assert colors.behind(theme, slide, 2, 2) == ("F07828" if readable else colors.IMAGE, "a picture")
+
+
+RING = [(0, "224D4E"), (55000, "2E5A5B"), (75000, "C9A27C"), (85000, "F3E6D3"), (92000, "B98A5E"), (100000, "E8D5BC")]
+
+
+def badge_slide(badge, label_rgb=None):
+    """A column like a designer's: a pale card, a teal header on it, a round badge on the header (a radial gradient
+    or a picture: dark teal in the middle, a light metallic rim) and the heading beside the badge. Returns the deck
+    and a pick for the icon that replaced the PL placeholder in the badge."""
+    from io import BytesIO
+    from lxml import etree
+    from PIL import Image, ImageDraw
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+    from app.models import IconRecord, Item, Pick
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    for (x, y, w, h), rgb in (((1, 1, 3, 5), (0xF1, 0xED, 0xE9)), ((1, 1, 3, 0.6), (0x17, 0x5C, 0x65))):
+        rect = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y), Inches(w), Inches(h))
+        rect.fill.solid()
+        rect.fill.fore_color.rgb = RGBColor(*rgb)
+    if badge == "gradient":
+        circle = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(1.1), Inches(1.05), Inches(0.5), Inches(0.5))
+        sp_pr = circle._element.spPr
+        for old in sp_pr.findall("{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill"):
+            sp_pr.remove(old)
+        stops = "".join(f'<a:gs pos="{pos}"><a:srgbClr val="{hexv}"/></a:gs>' for pos, hexv in RING)
+        sp_pr.insert(2, etree.fromstring(
+            '<a:gradFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" rotWithShape="1">'
+            f'<a:gsLst>{stops}</a:gsLst><a:path path="circle">'
+            '<a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path></a:gradFill>'))
+    else:
+        im = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(im)
+        draw.ellipse((0, 0, 199, 199), fill=(0xC9, 0xA2, 0x7C, 255))       # light metallic rim
+        draw.ellipse((22, 22, 177, 177), fill=(0x22, 0x4D, 0x4E, 255))     # dark middle
+        png = BytesIO()
+        im.save(png, "PNG")
+        slide.shapes.add_picture(png, Inches(1.1), Inches(1.05), Inches(0.5), Inches(0.5))
+    head = slide.shapes.add_textbox(Inches(1.75), Inches(1.1), Inches(2.1), Inches(0.4))
+    head.text_frame.text = "Systems Map"
+    if label_rgb:
+        head.text_frame.paragraphs[0].runs[0].font.color.rgb = RGBColor.from_string(label_rgb)
+    item = Item(slide=1, shape_id=head.shape_id, text="Systems Map", kind="card", left=1.75, top=1.1, w=2.1, h=0.4,
+                set_id="headers")
+    item.placeholder = {"id": 999, "ids": [999], "slot": "bg1", "box": (1.2, 1.15, 0.3, 0.3)}
+    return prs, Pick(item, IconRecord("x", "x.svg", "outline", "c", []), "", [], left=1.2, top=1.15, size=0.3)
+
+
+@pytest.mark.parametrize("badge", ["gradient", "picture"])
+def test_an_icon_on_a_dark_badge_with_a_light_rim_is_light(badge):
+    """Designer feedback: icons on dark teal badges came out black. A radial gradient was read as the average of its
+    stops (the light rim made it look pale) and a picture wasn't read at all; what counts is what the icon sits on."""
+    from app import colors
+    prs, pick = badge_slide(badge)
+    colors.assign(prs, [pick], "accent1")
+    assert pick.color_slot == "bg1", pick.color_note
+    theme = colors.Theme(prs.slide_masters[0])
+    for bg, _ in colors.behind_icon(theme, prs.slides[0], pick.left, pick.top, pick.size, {999}):
+        assert colors.contrast(pick.color_hex, bg) >= 4.5, bg     # dark teal under every part of the icon
+    assert "wasn't checked" not in pick.color_note
+
+
+def test_a_radial_gradient_is_read_where_the_point_is():
+    from app import colors
+    prs, _ = badge_slide("gradient")
+    theme = colors.Theme(prs.slide_masters[0])
+    assert colors.behind(theme, prs.slides[0], 1.35, 1.30)[0] == "224D4E"                 # the badge's middle
+    assert colors.behind(theme, prs.slides[0], 1.12, 1.30)[0] not in ("224D4E", "175C65")  # its rim
+    assert colors.behind(theme, prs.slides[0], 1.11, 1.06)[0] == "175C65"   # outside the circle: the header
+
+
+def test_the_hole_of_a_freeform_ring_is_not_part_of_it():
+    """A ring drawn as one freeform (Merge Shapes) leaves its middle see-through: an icon there is on the slide."""
+    from lxml import etree
+    from pptx.dml.color import RGBColor
+    from pptx.enum.shapes import MSO_SHAPE
+    from app import colors
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    ring = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(1), Inches(2), Inches(2))
+    ring.fill.solid()
+    ring.fill.fore_color.rgb = RGBColor(0x46, 0x46, 0x46)
+    sp_pr = ring._element.spPr
+    sp_pr.replace(sp_pr.find("{http://schemas.openxmlformats.org/drawingml/2006/main}prstGeom"), etree.fromstring(
+        '<a:custGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:pathLst><a:path w="100" h="100">'
+        '<a:moveTo><a:pt x="50" y="0"/></a:moveTo>'
+        '<a:arcTo wR="50" hR="50" stAng="16200000" swAng="21600000"/><a:close/>'
+        '<a:moveTo><a:pt x="50" y="30"/></a:moveTo>'
+        '<a:cubicBezTo><a:pt x="80" y="30"/><a:pt x="80" y="70"/><a:pt x="50" y="70"/></a:cubicBezTo>'
+        '<a:cubicBezTo><a:pt x="20" y="70"/><a:pt x="20" y="30"/><a:pt x="50" y="30"/></a:cubicBezTo><a:close/>'
+        '</a:path></a:pathLst></a:custGeom>'))
+    theme = colors.Theme(prs.slide_masters[0])
+    assert colors.behind(theme, slide, 2.0, 2.0)[0] == "FFFFFF"     # the hole
+    assert colors.behind(theme, slide, 1.2, 2.0)[0] == "464646"     # the ring
+    assert colors.behind(theme, slide, 1.05, 1.05)[0] == "FFFFFF"   # outside the ring, inside its box
+
+
+@pytest.mark.parametrize("label, expected", [(None, "bg1"), ("FFFFFF", "bg1"), ("000000", "tx1")])
+def test_on_a_dark_surface_a_dark_icon_gives_way_to_a_light_one(label, expected):
+    """Black reaches 3:1 on a mid-dark teal, but a designer puts a light icon there, like the white heading beside
+    it; a dark one only when the heading is dark too."""
+    from lxml import etree
+    from app import colors
+    prs, pick = badge_slide("gradient", label)
+    circle = prs.slides[0].shapes[2]
+    circle._element.spPr.remove(circle._element.spPr.find("{http://schemas.openxmlformats.org/drawingml/2006/main}gradFill"))
+    circle.fill.solid()
+    circle.fill.fore_color.rgb = __import__("pptx").dml.color.RGBColor.from_string("2E7D82")
+    assert colors.contrast("000000", "2E7D82") >= 3 and colors.contrast("FFFFFF", "2E7D82") >= 3
+    pick.item.placeholder["slot"] = None
+    colors.assign(prs, [pick], "tx1")                                  # the deck's icons are black
+    assert pick.color_slot == expected, pick.color_note
 
 
 # --- item detection, placement that never covers content, existing icons' color --------------------------

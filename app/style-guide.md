@@ -135,6 +135,12 @@ if the brand color changes the icons follow. Use the text color
 (`theme:dk1` / `theme:dk2`) when accent 1 has poor contrast on the card fill
 (below 3:1) or the brand reserves the accent for highlights. Never multicolor.
 
+On a dark surface (a header bar, a dark badge or photo), the icon goes light,
+like the text on it: `theme:lt1` (white) on a teal header with a white heading,
+never black, even where black reaches 3:1. Judge contrast on everything the
+icon covers: a badge with a dark middle and a light metallic rim is dark where
+the icon sits.
+
 ## 5. Size and placement
 
 **Tiers** (inches, long side, from `library/size-tiers.json`; a brand block
