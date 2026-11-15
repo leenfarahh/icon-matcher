@@ -679,8 +679,9 @@ const readAs = (item, icon = "") => item.reads_as
       item.show.map(esc).join(", ")}</div>` : ""}`
   : item.concept && item.concept !== icon ? `<span class="mono">${esc(item.concept)}</span>` : "-";
 
-// A results section: collapsed until the designer opens it; its header says how much is inside.
-const section = (title, count, body, id = "") => `<details class="panel fold"${id ? ` id="${id}"` : ""}>
+// A results section: collapsed until the designer opens it (unless `open`); its header says how much is inside.
+const section = (title, count, body, id = "", open = false) => `<details class="panel fold"${id ? ` id="${id}"` : ""}${
+    open ? " open" : ""}>
     <summary><h2>${title}</h2>${count ? `<span class="count">${count}</span>` : ""}</summary>
     <div class="fold-body">${body}</div></details>`;
 
@@ -746,9 +747,12 @@ function renderResult(r) {
           f.spot ? `<button class="secondary" type="button" data-review="${n}" style="margin-top:8px">Choose on the slide</button>` : ""}</td>
       </tr>`).join("")}</table>`) : "";
 
-  const notes = section("Settings and gaps", r.gaps.length ? `${r.gaps.length} note${r.gaps.length === 1 ? "" : "s"}` : "", `
-      ${Object.entries(s.sources).map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("")}
-      ${r.gaps.map(g => `<div>${esc(g)}</div>`).join("")}`);
+  // Nothing placed or flagged: the notes say why, so they show first and without a click.
+  const quiet = !r.picks.length && !r.flags.length && r.gaps.length > 0;
+  const sources = Object.entries(s.sources).map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("");
+  const gaps = r.gaps.map(g => `<div>${esc(g)}</div>`).join("");
+  const notes = section("Settings and gaps", r.gaps.length ? `${r.gaps.length} note${r.gaps.length === 1 ? "" : "s"}` : "",
+                        quiet ? gaps + sources : sources + gaps, "", quiet);
 
   $("#out").innerHTML = summary + picks + review + flags + notes;
   if (HOST) HOST.output = r.output_file;   // the file name a download inside Claude gets

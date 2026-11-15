@@ -166,8 +166,8 @@ ask for a brand tier rather than using a one-off size inside a set.
   the largest size that keeps the icon's proportions. The designer chose that
   spot, so nothing else on the slide gets an icon and no tier applies. The icon
   stands for the placeholder's label (its panel's heading, else the nearest
-  text in line; never a KPI value) and takes the placeholder's theme color when
-  it has the contrast.
+  text in line; the subtitle or title when it sits on their line; never a KPI
+  value) and takes the placeholder's theme color when it has the contrast.
 - **Cards and columns (`above`)**: the icon sits above the heading, one gap
   above the first line, aligned with the heading's start (left in English,
   right in Arabic, centered if the heading is centered). Every card in the

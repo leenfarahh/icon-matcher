@@ -53,8 +53,9 @@ files for other variants). Until then, only shapes named or alt-texted "PL", "PL
 
 Each placeholder stands for its label: the heading of the panel it sits on, else the nearest text in line with
 it. Pairs go closest first and a text labels one placeholder only; KPI values ("15-30%", "AED 2.4bn") are never
-labels, so a tile's icon stands for its description. A slide's placeholders are one set (all of them get icons,
-or none). The icon takes the placeholder's place: same group and z-order, centered in its frame at the largest
+labels, so a tile's icon stands for its description. The slide's title and subtitle label a placeholder that sits
+on their line (a logo at the end of the subtitle), else only when no other text is in reach. A slide's
+placeholders are one set (all of them get icons, or none); when one has no label, the note says where it is. The icon takes the placeholder's place: same group and z-order, centered in its frame at the largest
 size that keeps the icon's proportions; the placeholder is removed. Its color is the placeholder's theme color
 when that has 3:1 contrast with what is behind it (the logo itself left out), else the usual deck color rules.
 Placeholders left in place (no label, or no icon fits) are named in the report with the reason.

@@ -415,17 +415,20 @@ def _in_line(text_box, spot) -> tuple[str, float] | None:
     return (side, gap) if -0.05 <= gap <= HOLDER_REACH_IN else None
 
 
-def _label_candidates(box, others, texts, theme, slide_area, siblings=()) -> list[tuple]:
+def _label_candidates(box, others, texts, theme, slide_area, siblings=(), titles=()) -> list[tuple]:
     """The texts an icon spot (a holder or placeholder) may stand for, best first, as (gap in inches, shape):
     the heading of the panel it sits in (its topmost text), then a text frame it sits in with its lines clear of
     it (a card drawn as one text box), then the texts in line with it (above, below or beside), nearest first.
     KPI values are never labels: in a tile, the icon stands for the description; a figure with a word or two comes
     after every other text in reach. A text on the same side of another spot of the set (`siblings`: their boxes)
     heads the set and labels none of them: a subtitle across a row of cards sits above every icon, often closer
-    than each card's own heading."""
+    than each card's own heading. `titles`: the slide's title and subtitle, labels only for a spot that sits in
+    their own frame (a logo at the end of the subtitle line) or, after every other text in reach, in line with them."""
     l, t, r, b = box
     cx, cy = (l + r) / 2, (t + b) / 2
-    texts = [s for s in texts if not _value_only(s.text_frame.text)]
+    title_ids = {s.shape_id for s in titles}
+    panel_texts = [s for s in texts if not _value_only(s.text_frame.text)]
+    texts = panel_texts + list(titles)
 
     def center(s):
         sl, st, sr, sb = _inches(s)
@@ -440,7 +443,7 @@ def _label_candidates(box, others, texts, theme, slide_area, siblings=()) -> lis
               and 2 * (r - l) * (b - t) <= (pr - pl) * (pb - pt) <= HOLDER_PANEL_SHARE * slide_area]
     if panels:
         pl, pt, pr, pb = panel = min(panels, key=lambda e: (e[2] - e[0]) * (e[3] - e[1]))
-        on = [s for s in texts if pl <= center(s)[0] <= pr and pt <= center(s)[1] <= pb]
+        on = [s for s in panel_texts if pl <= center(s)[0] <= pr and pt <= center(s)[1] <= pb]
         if on and not any(holds(panel, o) for o in siblings):
             out.append((-1.0, min(on, key=lambda s: (_inches(s)[1], len(s.text_frame.text.split())))))
 
@@ -456,8 +459,16 @@ def _label_candidates(box, others, texts, theme, slide_area, siblings=()) -> lis
             continue
         if any((there := _in_line(_inches(s), o)) and there[0] == here[0] for o in siblings):
             continue
-        out.append((here[1] + (HOLDER_REACH_IN if _stat(s.text_frame.text) else 0), s))
+        out.append((here[1] + (HOLDER_REACH_IN if _stat(s.text_frame.text) or s.shape_id in title_ids else 0), s))
     return sorted(out, key=lambda e: e[0])
+
+
+def _where(box, slide_w, slide_h) -> str:
+    """Where a box sits on the slide, in words a designer finds it by: "top right", "middle", "bottom left"..."""
+    l, t, r, b = box
+    row = ("top", "middle", "bottom")[min(2, max(0, int((t + b) / 2 / slide_h * 3)))]
+    col = ("left", "center", "right")[min(2, max(0, int((l + r) / 2 / slide_w * 3)))]
+    return "middle" if (row, col) == ("middle", "center") else f"{row} {'' if col == 'center' else col}".strip()
 
 
 def _label_for(box, others, texts, theme, slide_area, siblings=()):
@@ -477,21 +488,27 @@ def pl_placeholders(slide, theme, slide_h, refs) -> tuple[list[dict], str]:
     ids = set().union(*(f["ids"] for f in found))
     others = [s for s in colors.leaves(slide.shapes) if s.shape_id not in ids]
     texts = [s for s in others if s.has_text_frame and s.text_frame.text.strip() and not _not_an_item(s, slide_h)]
-    slide_area = slide.part.package.presentation_part.presentation.slide_width / EMU * slide_h
+    # The title and subtitle never get icons of their own, but a placeholder the designer put on their line does.
+    titles = [s for s in others if s.has_text_frame and s.text_frame.text.strip() and s.is_placeholder
+              and "TITLE" in str(s.placeholder_format.type)]
+    slide_w = slide.part.package.presentation_part.presentation.slide_width / EMU
+    slide_area = slide_w * slide_h
     siblings = [[g["box"] for g in found if g is not f] for f in found]
     pairs = sorted(((gap, k, s) for k, f in enumerate(found)
-                    for gap, s in _label_candidates(f["box"], others, texts, theme, slide_area, siblings[k])),
+                    for gap, s in _label_candidates(f["box"], others, texts, theme, slide_area, siblings[k], titles)),
                    key=lambda e: e[:2])
     taken = set()
     for gap, k, s in pairs:
         if "label" not in found[k] and s.shape_id not in taken:
             found[k]["label"] = s
             taken.add(s.shape_id)
-    if any("label" not in f for f in found):
-        near = any(_label_candidates(f["box"], others, texts, theme, slide_area, siblings[k])
-                   for k, f in enumerate(found) if "label" not in f)
-        return [], ("has no text of its own nearby (the texts near it label other placeholders)" if near
-                    else "has no text beside it or on its panel")
+    lone = [(k, f) for k, f in enumerate(found) if "label" not in f]
+    if lone:
+        k, f = lone[0]
+        where = f"at the {_where(f['box'], slide_w, slide_h)}" if len(found) > 1 else ""
+        near = _label_candidates(f["box"], others, texts, theme, slide_area, siblings[k], titles)
+        return [], (f"{where} has no text of its own nearby (the texts near it label other placeholders)" if near
+                    else f"{where} has no text beside it or on its panel").strip()
     for f in found:
         f["slot"] = colors.icon_slot(theme, f["shape"])
     return sorted(found, key=lambda f: (round(_inches(f["label"])[1], 1), _inches(f["label"])[0])), ""
@@ -527,7 +544,8 @@ def read_items(prs: Presentation, slides: list[int] | None = None, refs=(), note
         # PL logo placeholders the designer left for icons: each icon replaces one and stands for its label.
         found, problem = pl_placeholders(slide, theme, slide_h, refs)
         if problem and notes is not None:
-            notes.append(f"Slide {n}: a PL placeholder {problem}, so this slide's placeholders were left as they are")
+            notes.append(f"Slide {n}: a PL placeholder {problem}, so this slide's placeholders were left as they are "
+                         "(each one needs its own label: put that one next to its text, or delete it)")
         if found:
             style = {"drawn": True, "geom": "placeholder", "fill": None, "font": 0, "bold": False}
             fam = _family(slide, "placeholder", style, [visual_box(f["shape"]) for f in found], slide_w, slide_h,

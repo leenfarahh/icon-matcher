@@ -1749,8 +1749,54 @@ def test_a_placeholder_without_its_own_label_leaves_the_slide_as_it_is(tmp_path)
     pl_logo(slide.shapes, 9, 5.5, 0.6)                              # nothing near it
     prs.save(tmp_path / "d.pptx")
     r = pipeline.run(tmp_path / "d.pptx", lib, "replace")
-    assert r.picks == [] and r.gaps == ["Slide 1: a PL placeholder has no text beside it or on its panel, so this "
-                                        "slide's placeholders were left as they are"]
+    assert r.picks == [] and r.gaps == ["Slide 1: a PL placeholder at the bottom right has no text beside it or on "
+                                        "its panel, so this slide's placeholders were left as they are (each one "
+                                        "needs its own label: put that one next to its text, or delete it)"]
+
+
+def section_slide(tmp_path, subtitle_logo=True):
+    """Like a designer's benchmark slide: a title and subtitle (layout placeholders), two red section headers with a
+    PL logo at their right end, and one more PL logo at the right end of the subtitle line."""
+    from pptx.enum.shapes import MSO_SHAPE
+    lib = placeholder_library(tmp_path)
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)
+    slide = prs.slides.add_slide(prs.slide_layouts[1])                 # title and content
+    slide.shapes.title.text = "Governments support media infrastructure"
+    slide.shapes.title.left, slide.shapes.title.top = Inches(0.5), Inches(0.4)
+    slide.shapes.title.width, slide.shapes.title.height = Inches(12.3), Inches(0.9)
+    sub = slide.placeholders[1]
+    sub.element.nvSpPr.nvPr.find("{http://schemas.openxmlformats.org/presentationml/2006/main}ph").set("type", "subTitle")
+    sub.text = "Infrastructure examples from benchmarks"
+    sub.left, sub.top, sub.width, sub.height = Inches(0.5), Inches(1.4), Inches(12.3), Inches(0.35)
+    if subtitle_logo:
+        pl_logo(slide.shapes, 12.5, 1.43, 0.3)
+    for x, head in ((0.5, "LARGE CONTENT PRODUCTION FACILITIES"), (6.7, "MEDIA HUBS")):
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(2.1), Inches(6.1), Inches(0.45))
+        bar.text_frame.text = head
+        pl_logo(slide.shapes, x + 5.7, 2.17, 0.3)
+    prs.save(tmp_path / "d.pptx")
+    return lib, prs
+
+
+def test_a_placeholder_on_the_subtitle_line_stands_for_the_subtitle(tmp_path):
+    """Designer feedback: a deck whose only slide had a PL logo at the end of its subtitle line got no icons at all.
+    Titles never get icons of their own, so that logo had no label and the slide's placeholders were all skipped."""
+    from app import deck
+    lib, prs = section_slide(tmp_path)
+    items = [i for i in deck.read_items(prs, refs=lib.placeholders) if i.placeholder]
+    assert sorted(i.text for i in items) == ["Infrastructure examples from benchmarks",
+                                             "LARGE CONTENT PRODUCTION FACILITIES", "MEDIA HUBS"]
+    r = pipeline.run(tmp_path / "d.pptx", lib, "replace")
+    assert len(r.picks) + len(r.flags) == 3 and not any("left as they are" in g for g in r.gaps)
+
+
+def test_a_title_labels_a_placeholder_only_when_nothing_else_does(tmp_path):
+    """The section headers keep their own headings; the subtitle above them heads the slide, not their logos."""
+    from app import deck
+    lib, prs = section_slide(tmp_path, subtitle_logo=False)
+    items = [i for i in deck.read_items(prs, refs=lib.placeholders) if i.placeholder]
+    assert sorted(i.text for i in items) == ["LARGE CONTENT PRODUCTION FACILITIES", "MEDIA HUBS"]
 
 
 # --- which text a placeholder stands for, on layouts from a real deck -------------------------------------------
