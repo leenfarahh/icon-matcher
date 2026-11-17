@@ -10,7 +10,7 @@ from pptx import Presentation
 from pptx.util import Inches
 from starlette.testclient import TestClient
 
-from app import auth, config, connector, odoo, pages, web
+from app import auth, config, connector, jobs, odoo, pages, web
 from app.library import Library
 from test_pipeline import make_deck, make_library, pl_logo
 
@@ -360,6 +360,63 @@ def test_bad_decks_are_refused_and_the_run_stays_open(env):
         assert call(c, "get_icon_run", run_id=told["run_id"])[1]["status"] == "waiting"
         assert call(c, "start_icon_run", slides="2 to 5")[0]
         assert call(c, "start_icon_run", mode="standardize")[0]
+
+
+def test_a_deck_over_the_size_cap_is_refused_before_it_runs(env, monkeypatch):
+    """ICON_MAX_DECK_MB: a run holds its deck about twice over, so one too big for the instance's memory is refused
+    with a way to make it smaller, whether chosen in the page or attached in the chat. 0: no cap."""
+    make_deck(env / "deck.pptx", ["Revenue growth"])
+    monkeypatch.setattr(config, "MAX_DECK_MB", (env / "deck.pptx").stat().st_size / 2**20 / 2)
+    with client() as c:
+        told, panel = start(c, attached_deck="/mnt/user-data/uploads/deck.pptx")
+        r = run_deck(c, panel["base"], env / "deck.pptx")
+        assert r.status_code == 413 and "Compress Pictures" in r.json()["detail"]
+        with open(env / "deck.pptx", "rb") as f:                           # Claude's curl, from its code tools
+            assert c.post(panel["base"] + "deck", files={"deck": ("deck.pptx", f, PPTX)}).status_code == 413
+        run = call(c, "get_icon_run", run_id=told["run_id"])[1]
+        assert run["status"] == "waiting"
+        monkeypatch.setattr(config, "MAX_DECK_MB", 0)
+        assert run_deck(c, panel["base"], env / "deck.pptx").status_code == 200
+
+
+def test_big_decks_and_slide_pictures_wait_for_the_memory_to_themselves():
+    """jobs.gate: PARALLEL_RUNS decks at a time, but work that goes alone (a deck over BIG_DECK_MB, slide pictures)
+    waits for what is running, and smaller work that arrives after it waits behind it rather than overtaking it."""
+    import threading
+    gate, log = jobs.Gate(2), []
+    done = {name: threading.Event() for name in ("a", "b", "big", "c")}
+
+    def work(name, alone=False):
+        with gate(alone):
+            log.append(f"{name} in")
+            done[name].wait(10)
+            log.append(f"{name} out")
+
+    def until(condition):
+        end = time.monotonic() + 10
+        while not condition():
+            assert time.monotonic() < end, log
+            time.sleep(0.01)
+
+    threads = []
+    for name, alone, condition in (("a", False, lambda: gate.used == 1), ("b", False, lambda: gate.used == 2),
+                                   ("big", True, lambda: len(gate.line) == 1), ("c", False, lambda: len(gate.line) == 2)):
+        threads.append(threading.Thread(target=work, args=(name, alone)))
+        threads[-1].start()
+        until(condition)
+    done["a"].set()
+    until(lambda: gate.used == 1)
+    assert len(gate.line) == 2 and "c in" not in log      # room for c, but the big deck is first in line
+    done["b"].set()
+    until(lambda: "big in" in log)
+    assert gate.used == 2 and "c in" not in log           # the big deck has the instance to itself
+    done["big"].set()
+    until(lambda: "c in" in log)
+    done["c"].set()
+    for t in threads:
+        t.join(10)
+    assert log == ["a in", "b in", "a out", "b out", "big in", "big out", "c in", "c out"]
+    assert gate.used == 0 and not gate.line
 
 
 def test_a_broken_deck_fails_with_a_reason(env):

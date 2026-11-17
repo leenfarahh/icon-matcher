@@ -574,6 +574,40 @@ def test_a_see_through_card_over_a_picture_blends_with_what_the_picture_shows(re
     assert colors.behind(theme, slide, 2, 2) == ("F07828" if readable else colors.IMAGE, "a picture")
 
 
+def test_pictures_are_read_from_a_small_copy_and_ones_too_large_to_decode_are_left_unread(monkeypatch):
+    """A picture's colors come from a small RGBA copy: an opaque one is sized down before that copy, a JPEG decodes
+    at a reduced size, and see-through parts (alpha, or a PNG's transparent color) stay see-through. A picture whose
+    decode would take more than MAX_PICTURE_MB (twice the pixels' size when it needs a full-size RGBA copy) is left
+    unread, as a metafile is, rather than taking hundreds of MB: one 8000 x 6000 PNG of 0.15 MB took 370 MB."""
+    from io import BytesIO
+    from PIL import Image
+    from app import colors
+
+    class Part:   # what _raster reads from an image part
+        def __init__(self, im, fmt="PNG", **save):
+            out = BytesIO()
+            im.save(out, fmt, **save)
+            self.blob = out.getvalue()
+
+    opaque = colors._raster(Part(Image.new("RGB", (1000, 500), (240, 120, 40))))
+    assert opaque.mode == "RGBA" and opaque.size == (128, 64) and opaque.getpixel((5, 5)) == (240, 120, 40, 255)
+    half = Image.new("RGBA", (400, 400), (0, 0, 0, 0))
+    half.paste((20, 200, 90, 255), (0, 0, 200, 400))
+    seen = colors._raster(Part(half))
+    assert seen.getpixel((10, 64)) == (20, 200, 90, 255) and seen.getpixel((120, 64))[3] == 0
+    keyed = colors._raster(Part(Image.new("RGB", (400, 400), (255, 0, 255)), transparency=(255, 0, 255)))
+    assert keyed.getpixel((10, 10))[3] == 0
+
+    monkeypatch.setattr(colors, "MAX_PICTURE_MB", 1)
+    assert colors._raster(Part(Image.new("RGB", (1000, 500), (240, 120, 40)))) is None   # 2 MB to decode
+    assert colors._raster(Part(Image.new("RGB", (400, 400), (240, 120, 40)))) is not None   # 0.6 MB
+    assert colors._raster(Part(half)) is None                                             # 0.6 MB, twice
+    big_jpeg = colors._raster(Part(Image.new("RGB", (4000, 3000), (240, 120, 40)), "JPEG"))
+    assert big_jpeg is not None and big_jpeg.size == (128, 96)   # decoded at an eighth: 0.7 MB
+    with pytest.raises(ValueError):   # an icon picture too large to read: its colors are unknown (the caller's None)
+        colors._pixel_colors(Part(Image.new("RGB", (1000, 500))).blob)
+
+
 RING = [(0, "224D4E"), (55000, "2E5A5B"), (75000, "C9A27C"), (85000, "F3E6D3"), (92000, "B98A5E"), (100000, "E8D5BC")]
 
 

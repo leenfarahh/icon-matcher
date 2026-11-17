@@ -53,7 +53,8 @@ for code execution (step 2), and delete the old service (runs last a day, so not
 5 to 10 minutes (it installs LibreOffice); later ones reuse it.
 
 Optional settings (`.env.example` lists them all): `ICON_RUN_IDLE_HOURS` (1),
-`ICON_PARALLEL_RUNS` (2), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
+`ICON_PARALLEL_RUNS` (2), `ICON_BIG_DECK_MB` (150: bigger decks are processed alone), `ICON_MAX_DECK_MB` (500: bigger
+decks are refused, with a request to compress their pictures), `ANTHROPIC_MODEL` (`claude-sonnet-5-5`), `ANTHROPIC_EFFORT` (`low`),
 `ICON_MIN_FIT` (3: how sure Claude must be to place an icon), `ICON_ENHANCE` (1: read each card before picking).
 
 The icon library ships with the code (`icons/`). To publish library changes, commit them and Render redeploys.
@@ -191,7 +192,8 @@ Claude Code sends a deck you name by its path on your machine, so it needs no al
 - **Retention.** No deck content is kept in a database. A run's deck, its copy, its slide pictures and the link live
   on the Render disk in Frankfurt only while the run is in use: a run from the web page is deleted as soon as the
   designer leaves or refreshes its page, and any run (Claude's too) after `ICON_RUN_IDLE_HOURS` unused (1 hour by
-  default, checked every 5 minutes; an open page keeps its run in use). Decks have no size cap. Confirm that region
+  default, checked every 5 minutes; an open page keeps its run in use). Decks over `ICON_MAX_DECK_MB` (500 MB) are
+  refused. Confirm that region
   with whoever owns Prezlab's data policy before client decks go through it.
 - **Usage.** `usage.db` on the same disk keeps counts, icon ids and web page users' emails, never deck content, with
   no expiry (see "Usage page"). Only the people in `ICON_USAGE_ADMINS` can see it.

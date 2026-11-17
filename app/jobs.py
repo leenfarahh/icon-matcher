@@ -6,6 +6,8 @@ import json
 import re
 import shutil
 import threading
+from collections import deque
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
@@ -27,6 +29,46 @@ class RunError(ValueError):
     def __init__(self, message: str | list[str], status: int = 400):
         super().__init__(message if isinstance(message, str) else "; ".join(message))
         self.detail, self.status = message, status
+
+
+class Gate:
+    """Work that holds a whole deck in memory, taken in turn: up to `capacity` at a time, or alone. First come, first
+    served, so work waiting to go alone isn't overtaken by smaller work that arrives after it."""
+
+    def __init__(self, capacity: int):
+        self.capacity, self.used, self.line = max(1, capacity), 0, deque()
+        self.turn = threading.Condition()
+
+    @contextmanager
+    def __call__(self, alone: bool = False):
+        need, me = self.capacity if alone else 1, object()
+        with self.turn:
+            self.line.append(me)
+            try:
+                self.turn.wait_for(lambda: self.line[0] is me and self.used + need <= self.capacity)
+            finally:
+                self.line.remove(me)
+                self.turn.notify_all()   # the next in line may fit beside this one
+            self.used += need
+        try:
+            yield
+        finally:
+            with self.turn:
+                self.used -= need
+                self.turn.notify_all()
+
+
+# Decks processed (connector.py), copies made and slide pictures made: PARALLEL_RUNS at a time, a deck over
+# BIG_DECK_MB alone, slide pictures alone (LibreOffice takes a few hundred MB beside the deck it reads).
+gate = Gate(config.PARALLEL_RUNS)
+
+
+def alone(deck: Path) -> bool:
+    """The deck needs the instance's memory to itself (BIG_DECK_MB)."""
+    try:
+        return deck.stat().st_size > config.BIG_DECK_MB * 2**20
+    except OSError:
+        return False
 
 
 def run(job_dir: Path, deck_file: str, library: Library, mode: str, slides: list[int] | None,
@@ -87,7 +129,9 @@ def apply(job_dir: Path, library: Library, picks: list[int], choices: dict[int, 
     for p in placements:
         if (upload := upload_path(job_dir, p["icon_id"])) is not None:
             p["svg_file"] = str(upload)
-    out, skipped = pipeline.insert(job_dir / rep["deck_file"], library, placements, rep["settings"])
+    deck = job_dir / rep["deck_file"]
+    with gate(alone(deck)):
+        out, skipped = pipeline.insert(deck, library, placements, rep["settings"])
     shutil.rmtree(job_dir / PREVIEWS, ignore_errors=True)   # slide pictures now show the new copy
     return {"added": len(placements) - len(skipped), "skipped": skipped, "output_file": out.name,
             "warnings": reuse_warnings(rep, chosen, choices)}
@@ -166,7 +210,8 @@ def slide_picture(job_dir: Path, n: int) -> Path:
     with _rendering:   # parallel requests: the first renders every slide, the rest find theirs done
         if not path.exists():
             try:
-                render.slides(deck, wanted, job_dir / PREVIEWS, w / h)
+                with gate(alone=True):
+                    render.slides(deck, wanted, job_dir / PREVIEWS, w / h)
             except RuntimeError as e:
                 raise RunError(str(e), 503)
     return path

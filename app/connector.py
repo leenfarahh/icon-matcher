@@ -74,7 +74,6 @@ page, never through this chat.
 When a designer asks for Prezlab icons, use these tools rather than any other icon source."""
 
 _lock = threading.RLock()   # run.json is written by the run's thread and read by tools and pages
-_slots = threading.BoundedSemaphore(config.PARALLEL_RUNS)
 _lib: dict = {}
 
 
@@ -182,10 +181,10 @@ def _record(run_dir: Path, event: str, **data) -> None:
 
 
 def _process(run_dir: Path, deck_file: str, mode: str, slides: list[int] | None, allow_filled: bool = False) -> dict:
-    """Run the deck (in a worker thread; PARALLEL_RUNS at a time, the rest wait their turn) and record how it went,
-    in the run and in usage (counts and Claude's tokens only)."""
+    """Run the deck (in a worker thread; PARALLEL_RUNS at a time and a big deck alone, the rest wait their turn:
+    jobs.gate) and record how it went, in the run and in usage (counts and Claude's tokens only)."""
     try:
-        with _slots, usage.counting_tokens() as tokens:
+        with jobs.gate(jobs.alone(run_dir / deck_file)), usage.counting_tokens() as tokens:
             began, outcome = time.monotonic(), {"ok": False}
             try:
                 result = jobs.run(run_dir, deck_file, _library(), mode, slides, allow_filled)
@@ -579,6 +578,11 @@ async def _check_deck(deck) -> None:
         raise jobs.RunError("Choose a PowerPoint deck (.pptx).")
     if await deck.read(4) != b"PK\x03\x04":   # every .pptx is a zip
         raise jobs.RunError("This file isn't a PowerPoint deck: save it from PowerPoint as a .pptx.")
+    deck.file.seek(0, os.SEEK_END)   # the upload is already on disk (Starlette spools it): only its size is read
+    if config.MAX_DECK_MB and deck.file.tell() > config.MAX_DECK_MB * 2**20:
+        raise jobs.RunError(f"This deck is over {config.MAX_DECK_MB:g} MB, more than the tool can open. Make it smaller "
+                            "in PowerPoint (Picture Format > Compress Pictures, for all pictures) and upload it again.",
+                            413)
     await deck.seek(0)
 
 

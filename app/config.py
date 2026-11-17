@@ -31,9 +31,14 @@ ODOO_URL = os.getenv("ODOO_URL", "").rstrip("/")
 ODOO_DB = os.getenv("ODOO_DB", "")
 ODOO_ALLOWED_EMAIL_DOMAIN = os.getenv("ODOO_ALLOWED_EMAIL_DOMAIN", "prezlab.com").strip().lower()   # "" = any
 # A run's deck, copy and link are deleted after this long unused (an open page keeps its run in use), and a run from
-# the web page as soon as the designer leaves its page. Decks have no size cap.
+# the web page as soon as the designer leaves its page.
 RUN_IDLE_HOURS = float(os.getenv("ICON_RUN_IDLE_HOURS", "1"))
 PARALLEL_RUNS = int(os.getenv("ICON_PARALLEL_RUNS", "2"))      # decks processed at the same time; the rest queue
+# Memory (the Render instance has 2 GB). A run holds its deck about twice over (the deck and the copy it makes: a
+# 195 MB deck took 420 MB), so a deck over BIG_DECK_MB is processed alone, as slide pictures (LibreOffice) always
+# are, and a deck over MAX_DECK_MB is refused. 0 turns the cap off.
+BIG_DECK_MB = float(os.getenv("ICON_BIG_DECK_MB", "150"))
+MAX_DECK_MB = float(os.getenv("ICON_MAX_DECK_MB", "500"))
 # Usage (usage.py): counts kept beside the runs, never deck content; 0 turns recording off. The usage page (/web/usage)
 # is for these people only, signed in on the web page; empty, it is off. Times there are this many hours from UTC:
 # Jordan time by default (UTC+3 all year, no daylight saving).

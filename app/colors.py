@@ -377,16 +377,35 @@ def _gradient_at(theme, grad, u, v):
     return stops[-1][1][0], stops[-1][1][2]
 
 
+# Memory one picture may take while its colors are read. A JPEG decodes at a reduced size, but a PNG decodes whole, at
+# 4 bytes a pixel, and twice that when it needs a full-size RGBA copy too (transparency, a palette): one 8000 x 6000
+# PNG of 0.15 MB took 370 MB. Pictures over this are left unread, as a metafile is; opaque ones up to 40 million
+# pixels fit.
+MAX_PICTURE_MB = 160
+
+
+def _small_rgba(blob, size: int):
+    """An RGBA copy of an image at most `size` px across, decoded with as little memory as its format allows.
+    Raises ValueError for a picture too large to decode here, OSError for one Pillow can't read."""
+    from io import BytesIO
+    from PIL import Image
+    im = Image.open(BytesIO(blob))
+    im.draft("RGB", (2 * size, 2 * size))   # a JPEG decodes at a reduced size
+    shrink_first = im.mode in ("RGB", "L") and "transparency" not in im.info
+    if im.width * im.height * 4 * (1 if shrink_first else 2) > MAX_PICTURE_MB * 2**20:
+        raise ValueError(f"a {im.width} x {im.height} px picture is too large to read")
+    if shrink_first:
+        im.thumbnail((size, size))   # before the RGBA copy: one full-size image in memory, not two
+    im = im.convert("RGBA")
+    im.thumbnail((size, size))
+    return im
+
+
 def _raster(part):
-    """A small RGBA copy of an image part, or None when it can't be read (a metafile, say)."""
+    """A small RGBA copy of an image part, or None when it can't be read (a metafile, say) or is too large to."""
     if part not in _rasters:
-        from io import BytesIO
-        from PIL import Image
         try:
-            im = Image.open(BytesIO(part.blob))
-            im.draft("RGB", (256, 256))   # a JPEG decodes at a reduced size
-            im = im.convert("RGBA")
-            im.thumbnail((128, 128))
+            im = _small_rgba(part.blob, 128)
         except Exception:   # Pillow raises many kinds for formats it can't read
             im = None
         _rasters[part] = im
@@ -629,11 +648,8 @@ def icon_slot(theme, shape) -> str | None:
 
 def _pixel_colors(blob) -> Counter:
     """The main colors of a raster icon: its opaque pixels, or on an opaque image the pixels that differ
-    from the border (the background)."""
-    from io import BytesIO
-    from PIL import Image
-    im = Image.open(BytesIO(blob)).convert("RGBA")
-    im.thumbnail((64, 64))
+    from the border (the background). Raises ValueError for one too large to read, OSError for one that can't be."""
+    im = _small_rgba(blob, 64)
     raw = im.tobytes()
     px = [tuple(raw[i:i + 4]) for i in range(0, len(raw), 4)]
     if min(p[3] for p in px) < 250:

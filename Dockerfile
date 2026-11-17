@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app app
 COPY icons icons
 
-ENV ICON_LIBRARY_DIR=/srv/icons PYTHONUNBUFFERED=1
+# MALLOC_ARENA_MAX: decks are processed in worker threads, and glibc gives each thread its own memory pool by default,
+# which holds on to freed memory and lets the process grow well past what it uses.
+ENV ICON_LIBRARY_DIR=/srv/icons PYTHONUNBUFFERED=1 MALLOC_ARENA_MAX=2
 # Render sets PORT. No access log: run links carry their private key in the path.
 CMD ["sh", "-c", "exec uvicorn app.connector:app --host 0.0.0.0 --port ${PORT:-10000} --proxy-headers --forwarded-allow-ips '*' --no-access-log"]
