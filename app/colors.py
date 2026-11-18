@@ -706,66 +706,99 @@ def assign(prs, picks, default_slot: str = "accent1") -> None:
             theme = themes.setdefault(id(master), Theme(master))
             ignore = set(p.item.placeholder["ids"]) if p.item.placeholder else ()   # the logo the icon replaces
             seen.append((p, behind_icon(theme, slide, p.left, p.top, p.size, ignore), text_color(theme, slide, p.item)))
-        known = [(bg, where, label[0] if label else None) for _, under, label in seen for bg, where in under
-                 if bg != IMAGE]
-        own = [label[1] if label else None for *_, label in seen]
-        labels = [s for s in own if s in THEME_CLASS and s != default_slot]
-        # The designer colored the placeholders: their theme color comes first, when it reads.
-        held = Counter(p.item.placeholder["slot"] for p in members if p.item.placeholder
-                       and p.item.placeholder.get("slot") in THEME_CLASS)
-        candidates = [(s, MIN_CONTRAST, "the placeholder's color") for s, _ in held.most_common(1)]
-        candidates += [(default_slot, MIN_CONTRAST, "deck color")]
-        candidates += [(s, LABEL_MIN_CONTRAST, "the label's color") for s in dict.fromkeys(labels)]
-        candidates += [(s, MIN_CONTRAST, "theme dark/light") for s in FALLBACK_SLOTS if s != default_slot]
+        _decide(seen, theme, default_slot)
 
-        def worst(slot):
-            return min((contrast(theme.slot_hex(slot), bg), bg, where) for bg, where, _ in known)
 
-        def clash(slot):
-            """(background, what it is) where the slot goes the wrong way (dark where the icon should be light, or
-            the reverse), or None."""
-            hexv = theme.slot_hex(slot)
-            return next(((bg, where) for bg, where, label in known
-                         if (_lum(hexv) > _lum(bg)) != wants_light(bg, label)), None)
+SPLIT_NOTE = "; this set sits on both dark and light surfaces, so the icons on each got their own color"
 
-        def reads(slot, need):
-            return worst(slot)[0] >= need and clash(slot) is None
 
-        def shortfall(slot):
-            ratio, bg, where = worst(slot)
-            if ratio < MIN_CONTRAST:
-                return f"is only {ratio:.1f}:1 on {where} (#{bg})"
-            bg, where = clash(slot)
-            light = _lum(theme.slot_hex(slot)) > _lum(bg)
-            return (f"would be a {'light' if light else 'dark'} icon on {where} (#{bg}), which takes a "
-                    f"{'dark' if light else 'light'} one")
+def _sides(seen) -> list[list]:
+    """A set's icons by the way their surfaces go: those that take a light icon, then those that take a dark one
+    (each icon by most of the points under it). An icon over a picture that can't be read joins the larger part."""
+    light, dark, unknown = [], [], []
+    for entry in seen:
+        _, under, label = entry
+        votes = [wants_light(bg, label[0] if label else None) for bg, _ in under if bg != IMAGE]
+        (unknown if not votes else light if 2 * sum(votes) >= len(votes) else dark).append(entry)
+    parts = [part for part in (light, dark) if part]
+    if not parts:
+        return [unknown]
+    max(parts, key=len).extend(unknown)
+    return parts
 
-        # The designer gave the labels different colors for their backgrounds (white heading on a dark panel,
-        # dark heading on a light one): when the deck color doesn't work for all, each icon matches its label.
-        placeholder_works = held and (not known or reads(candidates[0][0], MIN_CONTRAST))
-        if known and not placeholder_works and not reads(default_slot, MIN_CONTRAST) and len(set(own)) > 1 \
-                and all(s in THEME_CLASS for s in own) \
-                and all(bg == IMAGE or contrast(theme.slot_hex(s), bg) >= LABEL_MIN_CONTRAST
-                        for (_, under, _), s in zip(seen, own) for bg, _ in under):
-            for (p, under, _), s in zip(seen, own):
-                mine = [(contrast(theme.slot_hex(s), bg), bg, where) for bg, where in under if bg != IMAGE]
-                ratio, bg, where = min(mine) if mine else (None, None, None)
-                p.color_slot, p.color_hex = s, theme.slot_hex(s)
-                p.color_note = (f"{s} (matches its label): the labels in this set use different colors for their "
-                                f"backgrounds" + (f"; {ratio:.1f}:1 on {where} (#{bg})" if ratio else ""))
-            continue
-        if not known:
-            slot, why = candidates[0][0], candidates[0][2]
-            note = f"{slot} ({why}): sits on a picture that can't be read, so contrast wasn't checked"
+
+def _decide(seen, theme, default_slot: str) -> None:
+    """Color one set (assign's `seen` entries). When no color reads on all of it because its icons sit on surfaces
+    that go opposite ways (a PL placeholder on a pale strip in a slide of dark badges), the icons on dark surfaces
+    and those on light ones are decided apart: a compromise color would go the wrong way on one of them."""
+    members = [p for p, *_ in seen]
+    known = [(bg, where, label[0] if label else None) for _, under, label in seen for bg, where in under
+             if bg != IMAGE]
+    own = [label[1] if label else None for *_, label in seen]
+    labels = [s for s in own if s in THEME_CLASS and s != default_slot]
+    # The designer colored the placeholders: their theme color comes first, when it reads.
+    held = Counter(p.item.placeholder["slot"] for p in members if p.item.placeholder
+                   and p.item.placeholder.get("slot") in THEME_CLASS)
+    candidates = [(s, MIN_CONTRAST, "the placeholder's color") for s, _ in held.most_common(1)]
+    candidates += [(default_slot, MIN_CONTRAST, "deck color")]
+    candidates += [(s, LABEL_MIN_CONTRAST, "the label's color") for s in dict.fromkeys(labels)]
+    candidates += [(s, MIN_CONTRAST, "theme dark/light") for s in FALLBACK_SLOTS if s != default_slot]
+
+    def worst(slot):
+        return min((contrast(theme.slot_hex(slot), bg), bg, where) for bg, where, _ in known)
+
+    def clash(slot):
+        """(background, what it is) where the slot goes the wrong way (dark where the icon should be light, or
+        the reverse), or None."""
+        hexv = theme.slot_hex(slot)
+        return next(((bg, where) for bg, where, label in known
+                     if (_lum(hexv) > _lum(bg)) != wants_light(bg, label)), None)
+
+    def reads(slot, need):
+        return worst(slot)[0] >= need and clash(slot) is None
+
+    def shortfall(slot):
+        ratio, bg, where = worst(slot)
+        if ratio < MIN_CONTRAST:
+            return f"is only {ratio:.1f}:1 on {where} (#{bg})"
+        bg, where = clash(slot)
+        light = _lum(theme.slot_hex(slot)) > _lum(bg)
+        return (f"would be a {'light' if light else 'dark'} icon on {where} (#{bg}), which takes a "
+                f"{'dark' if light else 'light'} one")
+
+    # The designer gave the labels different colors for their backgrounds (white heading on a dark panel,
+    # dark heading on a light one): when the deck color doesn't work for all, each icon matches its label.
+    placeholder_works = held and (not known or reads(candidates[0][0], MIN_CONTRAST))
+    if known and not placeholder_works and not reads(default_slot, MIN_CONTRAST) and len(set(own)) > 1 \
+            and all(s in THEME_CLASS for s in own) \
+            and all(bg == IMAGE or contrast(theme.slot_hex(s), bg) >= LABEL_MIN_CONTRAST
+                    for (_, under, _), s in zip(seen, own) for bg, _ in under):
+        for (p, under, _), s in zip(seen, own):
+            mine = [(contrast(theme.slot_hex(s), bg), bg, where) for bg, where in under if bg != IMAGE]
+            ratio, bg, where = min(mine) if mine else (None, None, None)
+            p.color_slot, p.color_hex = s, theme.slot_hex(s)
+            p.color_note = (f"{s} (matches its label): the labels in this set use different colors for their "
+                            f"backgrounds" + (f"; {ratio:.1f}:1 on {where} (#{bg})" if ratio else ""))
+        return
+    if not known:
+        slot, why = candidates[0][0], candidates[0][2]
+        note = f"{slot} ({why}): sits on a picture that can't be read, so contrast wasn't checked"
+    else:
+        chosen = next((c for c in candidates if reads(c[0], c[1])), None)
+        parts = _sides(seen) if chosen is None else [seen]
+        if len(parts) > 1:
+            for part in parts:
+                _decide(part, theme, default_slot)
+                for p, *_ in part:
+                    p.color_note += SPLIT_NOTE
+            return
+        slot, _, why = chosen or max(candidates, key=lambda c: worst(c[0])[0])
+        ratio, bg, where = worst(slot)
+        if slot == default_slot or (chosen and why == "the placeholder's color"):
+            note = f"{slot} ({why}): {ratio:.1f}:1 on {where} (#{bg})"
         else:
-            chosen = next((c for c in candidates if reads(c[0], c[1])), None)
-            slot, _, why = chosen or max(candidates, key=lambda c: worst(c[0])[0])
-            ratio, bg, where = worst(slot)
-            if slot == default_slot or (chosen and why == "the placeholder's color"):
-                note = f"{slot} ({why}): {ratio:.1f}:1 on {where} (#{bg})"
-            else:
-                note = f"{slot} ({why}): the deck color {default_slot} {shortfall(default_slot)}; {slot} is {ratio:.1f}:1"
-            if not chosen:
-                note += ", still low: check this slide"
-        for p, *_ in seen:
-            p.color_slot, p.color_hex, p.color_note = slot, theme.slot_hex(slot), note
+            note = f"{slot} ({why}): the deck color {default_slot} {shortfall(default_slot)}; {slot} is {ratio:.1f}:1"
+        if not chosen:
+            note += ", still low: check this slide"
+    for p in members:
+        p.color_slot, p.color_hex, p.color_note = slot, theme.slot_hex(slot), note

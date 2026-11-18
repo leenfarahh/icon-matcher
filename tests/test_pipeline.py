@@ -525,6 +525,18 @@ def test_a_row_of_cards_shares_one_color_that_works_on_every_card():
     assert {p.color_slot for p in row} == {"tx1"}               # accent1 fails on card 1, white text fails on card 2
 
 
+def test_a_set_on_both_dark_and_light_surfaces_splits_instead_of_one_wrong_way_color():
+    from pptx.enum.dml import MSO_THEME_COLOR
+    from app import colors
+    prs, ids = color_slide(MSO_THEME_COLOR.TEXT_2)              # first icon on a dark card, second on white
+    row = [icon_pick(ids[0], 2.2, "row"), icon_pick(ids[1], 7.2, "row")]
+    colors.assign(prs, row, "accent1")
+    # No one color reads on both (white vanishes on white, black goes the wrong way on the dark card): before,
+    # black went on both. Now the dark card takes white and the white slide the deck color.
+    assert [p.color_slot for p in row] == ["bg1", "accent1"], [p.color_note for p in row]
+    assert all(p.color_note.endswith(colors.SPLIT_NOTE) and "still low" not in p.color_note for p in row)
+
+
 def test_see_through_cards_and_plain_black_or_white_text_use_the_theme():
     from lxml import etree
     from pptx.enum.dml import MSO_THEME_COLOR
